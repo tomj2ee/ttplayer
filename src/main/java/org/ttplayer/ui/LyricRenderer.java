@@ -221,6 +221,18 @@ public class LyricRenderer extends JPanel {
         return lh;
     }
 
+    /** 当前歌词字体的实际行高（getHeight），若字体为 null 则返回默认 20 */
+    private int measuredLineHeight() {
+        try {
+            Font f = lyricFont != null ? lyricFont : new Font("Dialog", Font.PLAIN, 14);
+            FontMetrics fm = getFontMetrics(f);
+            int h = fm.getHeight();
+            return h > 0 ? h : 20;
+        } catch (Exception e) {
+            return 20;
+        }
+    }
+
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
