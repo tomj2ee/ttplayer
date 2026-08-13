@@ -1,0 +1,9 @@
+# Default ignored files
+
+config
+target
+.idea
+ssl.log
+config
+logs
+
