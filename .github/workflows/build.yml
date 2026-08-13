@@ -2,7 +2,7 @@ name: Build
 
 # 触发条件：
 #   - 推送 main/master 分支
-#   - 推送 v* 标签（如 v1.0.0）→ 额外发布 GitHub Release
+#   - 推送 v* 标签（如 v1.0.0）→ 额外发布 GitHub Release（fat jar + jpackage 原生安装包）
 #   - PR
 #   - 手动触发（workflow_dispatch）
 on:
@@ -35,19 +35,155 @@ jobs:
       - name: List produced jars
         run: ls -lh target/*.jar
 
+      - name: Collect platform jars
+        # 只收集带平台 classifier 的可执行 fat jar（形如 ttplayer-1.0.0-<平台>.jar），
+        # 排除不带 classifier 的主 jar（ttplayer-*.jar，不包含原生库、不可直接运行）。
+        run: |
+          mkdir -p target/collect
+          for jar in target/ttplayer-*.jar; do
+            [[ "$jar" == *"-macosx-x86_64.jar" || "$jar" == *"-macosx-arm64.jar" \
+            || "$jar" == *"-windows-x86_64.jar" || "$jar" == *"-linux-x86_64.jar" \
+            || "$jar" == *"-linux-arm64.jar" ]] && cp "$jar" target/collect/
+          done
+          ls -lh target/collect/
+
       - name: Upload jars as artifact
         uses: actions/upload-artifact@v4
         with:
           name: ttplayer-jars
-          path: |
-            target/ttplayer*.jar
-            target/ttplayer.jar
+          path: target/collect/*.jar
+          if-no-files-found: error
+
+  package:
+    # 用 jpackage 打原生安装包 — jpackage 不能跨平台，必须在目标平台 runner 上构建。
+    # 仅打 v* 标签时构建（jar 构建每次 push 都在 build job 完成，这里不再重复）。
+    name: Package ${{ matrix.platform }}
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest   # Windows x64 → .msi + .exe
+            platform: windows-x86_64
+          - os: macos-13         # macOS Intel → .dmg
+            platform: macosx-x86_64
+          - os: macos-14         # macOS Apple Silicon → .dmg
+            platform: macosx-arm64
+          - os: ubuntu-latest    # Linux x64 → .deb
+            platform: linux-x86_64
+          - os: ubuntu-24.04-arm # Linux ARM64 → .deb
+            platform: linux-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # jpackage 要求 JDK 14+；JDK 17 LTS 可运行 Java 8 字节码，且自带 jpackage。
+      # setup-java 会按 runner 架构安装对应 JDK（arm64 runner 装 arm64 JDK）。
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Download fat jar
+        uses: actions/download-artifact@v4
+        with:
+          name: ttplayer-jars
+          path: jar_input
+
+      - name: Prepare input dir
+        # jpackage 会把 --input 目录里所有文件打进包，只保留当前平台 jar
+        shell: bash
+        run: |
+          mkdir -p input
+          cp "jar_input/ttplayer-1.0.0-${{ matrix.platform }}.jar" input/
+
+      - name: Prepare icon (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          # cygpath 把 git-bash 路径转成 Windows 原生路径（D:\a\...），jpackage 才能识别
+          echo "ICON=$(cygpath -w "$(pwd)/src/main/resources/ico/TTPlayer.ico")" >> $GITHUB_ENV
+
+      - name: Prepare icon (Linux)
+        if: matrix.platform == 'linux-x86_64' || matrix.platform == 'linux-arm64'
+        shell: bash
+        run: |
+          echo "ICON=$(pwd)/src/main/resources/ico/ttplayer_48x48_32bpp.png" >> $GITHUB_ENV
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fakeroot
+
+      - name: Prepare icon (macOS, generate .icns)
+        if: startsWith(matrix.os, 'macos-')
+        shell: bash
+        run: |
+          cd src/main/resources/ico
+          mkdir -p icon.iconset
+          sips -z 16 16   ttplayer_48x48_32bpp.png --out icon.iconset/icon_16x16.png       >/dev/null
+          sips -z 32 32   ttplayer_48x48_32bpp.png --out icon.iconset/icon_16x16@2x.png    >/dev/null
+          sips -z 32 32   ttplayer_48x48_32bpp.png --out icon.iconset/icon_32x32.png       >/dev/null
+          sips -z 64 64   ttplayer_48x48_32bpp.png --out icon.iconset/icon_32x32@2x.png    >/dev/null
+          sips -z 128 128 ttplayer_48x48_32bpp.png --out icon.iconset/icon_128x128.png     >/dev/null
+          sips -z 256 256 ttplayer_48x48_32bpp.png --out icon.iconset/icon_128x128@2x.png  >/dev/null
+          sips -z 256 256 ttplayer_48x48_32bpp.png --out icon.iconset/icon_256x256.png     >/dev/null
+          sips -z 512 512 ttplayer_48x48_32bpp.png --out icon.iconset/icon_256x256@2x.png  >/dev/null
+          sips -z 512 512 ttplayer_48x48_32bpp.png --out icon.iconset/icon_512x512.png     >/dev/null
+          sips -z 1024 1024 ttplayer_48x48_32bpp.png --out icon.iconset/icon_512x512@2x.png >/dev/null
+          iconutil -c icns icon.iconset -o TTPlayer.icns
+          echo "ICON=$(pwd)/TTPlayer.icns" >> $GITHUB_ENV
+
+      # Windows 的 msi/exe 由 jpackage 生成，依赖 WiX 工具集
+      - name: Install WiX (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          choco install wixtoolset -y --no-progress
+          WIX_DIR=$(ls -d "/c/Program Files (x86)/WiX Toolset v3."* | head -1)
+          echo "WIX=$WIX_DIR" >> $GITHUB_ENV
+
+      - name: Package installer
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ICON: ${{ env.ICON }}
+        run: |
+          mkdir -p pkg_out
+
+          # Windows：.msi + .exe；macOS：.dmg；Linux：.deb
+          if [[ "$PLATFORM" == windows-* ]]; then
+            jpackage --type msi --name TTPlayer --app-version 1.0.0 \
+              --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
+              --main-class org.ttplayer.Main --icon "$ICON" \
+              --win-menu --win-shortcut --dest pkg_out
+            jpackage --type exe --name TTPlayer --app-version 1.0.0 \
+              --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
+              --main-class org.ttplayer.Main --icon "$ICON" \
+              --win-menu --win-shortcut --dest pkg_out
+          elif [[ "$PLATFORM" == macosx-* ]]; then
+            jpackage --type dmg --name TTPlayer --app-version 1.0.0 \
+              --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
+              --main-class org.ttplayer.Main --icon "$ICON" --dest pkg_out
+          else
+            jpackage --type deb --name ttplayer --app-version 1.0.0 \
+              --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
+              --main-class org.ttplayer.Main --icon "$ICON" --dest pkg_out
+          fi
+
+          ls -lh pkg_out/
+
+      - name: Upload installer as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.platform }}
+          path: pkg_out/*
           if-no-files-found: error
 
   release:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [ build, package ]
     runs-on: ubuntu-latest
     steps:
       - name: Download jars
@@ -56,8 +192,43 @@ jobs:
           name: ttplayer-jars
           path: dist
 
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: dist/installer
+          merge-multiple: true
+
+      - name: List release assets
+        run: find dist -type f | sort
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: TTPlayer ${{ github.ref_name }}
-          files: dist/*.jar
+          body: |
+            ## 可执行 fat jar（JDK 8+，`java -jar` 直接运行）
+
+            | 平台 | 文件 |
+            |------|------|
+            | macOS Intel | `ttplayer-1.0.0-macosx-x86_64.jar` |
+            | macOS Apple Silicon | `ttplayer-1.0.0-macosx-arm64.jar` |
+            | Windows x64 | `ttplayer-1.0.0-windows-x86_64.jar` |
+            | Linux x64 | `ttplayer-1.0.0-linux-x86_64.jar` |
+            | Linux ARM64 | `ttplayer-1.0.0-linux-arm64.jar` |
+
+            ## 原生安装包（jpackage，免安装 JDK）
+
+            | 平台 | 文件 |
+            |------|------|
+            | Windows x64 (.msi) | 安装后自带开始菜单/桌面快捷方式 |
+            | Windows x64 (.exe) | 安装引导程序 |
+            | macOS Intel (.dmg) | 拖入 Applications 即可 |
+            | macOS Apple Silicon (.dmg) | 拖入 Applications 即可 |
+            | Linux x64 (.deb) | `sudo dpkg -i` 安装 |
+            | Linux ARM64 (.deb) | `sudo dpkg -i` 安装 |
+
+            > 配置存储于 `~/.ttplayer/`（Windows `%USERPROFILE%\.ttplayer`）。macOS 未签名，首次启动如被拦截请在系统设置中允许，或右键 → 打开。
+          files: |
+            dist/*.jar
+            dist/installer/*
