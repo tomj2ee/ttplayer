@@ -60,6 +60,9 @@ public class EqualizerWindow extends SkinWindow {
         } else {
             setMinSize(268, 165);
         }
+        // buildControls() 在 super() 中已执行（创建滑块等控件），
+        // 但彼时 playerEngine 尚未赋值；绑定行为必须推迟到这里。
+        bindBehaviors();
     }
 
     public void setPlayerEngine(PlayerEngine engine) { this.playerEngine = engine; }
@@ -102,7 +105,6 @@ public class EqualizerWindow extends SkinWindow {
                     break;
             }
         }
-        bindBehaviors();
     }
 
     /** 绑定启用开关与滑块 → 均衡器 */
@@ -137,21 +139,27 @@ public class EqualizerWindow extends SkinWindow {
             });
         }
 
-        // 10 段均衡滑块
+        // 10 段均衡滑块（拖动即自动启用均衡器，与千千静听行为一致）
         if (eqSliders != null && playerEngine != null) {
             for (int i = 0; i < eqSliders.length; i++) {
                 final int band = i;
                 eqSliders[i].setListener(v -> {
-                    playerEngine.getEqualizer().setGainDb(band, Equalizer.sliderToDb(v));
+                    Equalizer e = playerEngine.getEqualizer();
+                    e.setGainDb(band, Equalizer.sliderToDb(v));
+                    e.setEnabled(true);
+                    if (btnEnabled != null) btnEnabled.setSelected(true);
                     saveConfig();
                 });
             }
         }
 
-        // preamp
+        // preamp（同样自动启用）
         if (preampSlider != null && playerEngine != null) {
             preampSlider.setListener(v -> {
-                playerEngine.getEqualizer().setPreampDb(Equalizer.sliderToDb(v));
+                Equalizer e = playerEngine.getEqualizer();
+                e.setPreampDb(Equalizer.sliderToDb(v));
+                e.setEnabled(true);
+                if (btnEnabled != null) btnEnabled.setSelected(true);
                 saveConfig();
             });
         }
@@ -269,6 +277,11 @@ public class EqualizerWindow extends SkinWindow {
         categoryIndex = index < CATEGORY_NAMES.length ? index : -1;
         eq.reset();
         eq.applyPreset(gains);
+        // 自动 preamp 补偿：按预设最大提升增益反推负值，防止大幅提升导致削波
+        double maxBoost = 0;
+        for (double g : gains) if (g > maxBoost) maxBoost = g;
+        double compDb = -maxBoost;
+        eq.setPreampDb(compDb);
         eq.setEnabled(true);
         if (btnEnabled != null) btnEnabled.setSelected(true);
         if (eqSliders != null) {
@@ -276,6 +289,10 @@ public class EqualizerWindow extends SkinWindow {
                 int v = (int) Math.round(50 + gains[i] * 50.0 / Equalizer.DB_RANGE);
                 eqSliders[i].setValue(Math.max(0, Math.min(100, v)));
             }
+        }
+        if (preampSlider != null) {
+            preampSlider.setValue(Math.max(0, Math.min(100,
+                    (int) Math.round(50 + compDb * 50.0 / Equalizer.DB_RANGE))));
         }
         saveConfig();
     }
