@@ -210,18 +210,19 @@ public class FontUtils {
         // 1. 首选字体：需满足文本需要的全部能力
         if (preferredFontName != null && !preferredFontName.isEmpty()) {
             Font font = new Font(preferredFontName, style, size);
-            if (hasAbility(font, need)) {
+            if (canRenderAll(text, font)) {
                 return font.deriveFont(style, (float) size);
             }
         }
         // 2. 按内容语言优先的候选链 + 全能型兜底：
         //    纯中文 → 中文字体优先；纯韩文 → 韩文字体优先；纯日文 → 日文字体优先；
-        //    混合 → 中日韩全能字体（Noto/Malgun 等）。始终要求覆盖文本全部字形。
+        //    混合 → 中日韩全能字体（Noto/Malgun 等）。
+        //    逐字符校验：候选字体必须能渲染文本的每一个字符，否则换下一个。
         String[] candidates = languageAwareChain(need);
         Font fallback = null;
         for (String fontName : candidates) {
             Font font = new Font(fontName, style, size);
-            if (hasAbility(font, need)) {
+            if (canRenderAll(text, font)) {
                 return font.deriveFont(style, (float) size);
             }
             // 记录第一个真物理字体作最后的兜底（至少不是 Dialog）
@@ -229,8 +230,8 @@ public class FontUtils {
                 fallback = font.deriveFont(style, (float) size);
             }
         }
-        // 3. 系统枚举兜底：找能满足能力的已装字体
-        Font systemFont = findSystemFontForAbility(need, style, size);
+        // 3. 系统枚举兜底：找能渲染全部字符的已装字体
+        Font systemFont = findSystemFontForText(text, style, size);
         if (systemFont != null) {
             return systemFont;
         }
@@ -323,7 +324,46 @@ public class FontUtils {
                 || (cp >= 0xF900 && cp <= 0xFAFF); // 兼容表意
     }
 
-    /** 字体是否具备给定能力集合 */
+    /**
+ * 字体能否渲染文本中的每一个字符（逐 code point 校验）。
+ * 这是防止「部分中文/韩文变成口」的根本手段：候选字体缺任一字符即被淘汰，
+ * 天然规避 Malgun Gothic、Yu Gothic 等对简体汉字字形覆盖不全的字体。
+ */
+private static boolean canRenderAll(String text, Font font) {
+    if (font == null || isLogicalFont(font)) return false;
+    if (text == null || text.isEmpty()) return true;
+    try {
+        boolean hasCJK = false;
+        for (int i = 0; i < text.length(); ) {
+            int cp = text.codePointAt(i);
+            i += Character.charCount(cp);
+            // 空白、控制字符不全校验
+            if (Character.isWhitespace(cp) || Character.isISOControl(cp)) continue;
+            if (!font.canDisplay(cp)) return false;
+            if (isHan(cp) || isHangul(cp) || isKana(cp)) hasCJK = true;
+        }
+        // 至少要能显示该文本所属的文字体系（防止 Dialog 等兜底被误采纳）
+        return hasCJK || font.canDisplay('A');
+    } catch (Exception e) {
+        return false;
+    }
+}
+
+/** 遍历系统字体找能渲染全部字符的字体 */
+private static Font findSystemFontForText(String text, int style, int size) {
+    try {
+        Font[] fonts = GraphicsEnvironment.getLocalGraphicsEnvironment().getAllFonts();
+        for (Font f : fonts) {
+            if (canRenderAll(text, f)) {
+                return f.deriveFont(style, (float) size);
+            }
+        }
+    } catch (Throwable ignored) {
+    }
+    return null;
+}
+
+/** 字体是否具备给定能力集合 (保留，UI 语言切换用) */
     private static boolean hasAbility(Font font, TextAbility need) {
         if (font == null) return false;
         // 跳过逻辑字体：AWT 中 Dialog/SansSerif 等逻辑字体的 canDisplay 对缺字形也常虚报 true，
