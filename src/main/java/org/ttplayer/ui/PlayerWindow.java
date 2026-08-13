@@ -24,6 +24,7 @@ public class PlayerWindow extends SkinWindow {
     public TtButton btnSet, btnDeskLrc;
 
     private TtTrackBar progressBar;
+    private TtVolumeBar volumeBar;
     private TtVisualizer visualizer;
     private TtLed ledLabel;
     private JLabel infoLabel;
@@ -234,7 +235,15 @@ public class PlayerWindow extends SkinWindow {
         }
         if (btnPrev != null) btnPrev.addActionListener(e -> { if (playerEngine != null) playerEngine.previous(); });
         if (btnNext != null) btnNext.addActionListener(e -> { if (playerEngine != null) playerEngine.next(); });
-        if (btnMute != null) btnMute.addActionListener(e -> { if (playerEngine != null) playerEngine.mute(); });
+        if (btnMute != null) {
+            btnMute.setSelected(playerEngine != null && playerEngine.isMuted());
+            btnMute.addActionListener(e -> {
+                if (playerEngine == null) return;
+                playerEngine.mute();
+                btnMute.setSelected(playerEngine.isMuted());
+                if (miniWindow != null) miniWindow.setMuted(playerEngine.isMuted());
+            });
+        }
         if (btnExit != null) btnExit.addActionListener(e -> { hideAllWindowsToTray(); });
         if (btnMinimize != null) btnMinimize.addActionListener(e -> { hideAllWindowsToTray(); });
         if (btnMiniMode != null) btnMiniMode.addActionListener(e -> toggleMiniMode());
@@ -320,13 +329,23 @@ public class PlayerWindow extends SkinWindow {
     private void createVolumeBar(TtSkin.Ctl ctl) {
         byte[] fillData = skin.getBmp(ctl.fillImage);
         byte[] thumbData = skin.getBmp(ctl.thumbImage);
-        TtVolumeBar volumeBar = new TtVolumeBar(fillData, thumbData);
+        volumeBar = new TtVolumeBar(fillData, thumbData);
         volumeBar.setBounds(ctl.left, ctl.top, ctl.right - ctl.left, ctl.bottom - ctl.top);
         getContentPane().add(volumeBar);
         addControl(volumeBar, ctl);
+        if (playerEngine != null) volumeBar.setValue(playerEngine.getVolumePercent());
         volumeBar.setVolumeListener(percent -> {
             if (playerEngine != null) playerEngine.setGainFromPercent(percent);
+            if (miniWindow != null) miniWindow.setVolume(percent);
         });
+    }
+
+    /** 外部（如迷你窗口滚轮）调整音量时同步音量条与引擎 */
+    public void setVolumeFromPercent(int percent) {
+        int v = Math.max(0, Math.min(100, percent));
+        if (volumeBar != null) volumeBar.setValue(v);
+        if (playerEngine != null) playerEngine.setGainFromPercent(v);
+        if (miniWindow != null) miniWindow.setVolume(v);
     }
 
     private void createVisualizer(TtSkin.Ctl ctl) {

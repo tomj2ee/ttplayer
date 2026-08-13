@@ -54,6 +54,9 @@ public class PlayerEngine {
     /** 当前音量百分比（0-100），与音量条保持一致 */
     private volatile int volumePercent = 70;
 
+    /** 静音状态：静音时增益压到最低 */
+    private volatile boolean muted;
+
     private PlayerEngineListener listener;
 
     public interface PlayerEngineListener {
@@ -144,7 +147,17 @@ public class PlayerEngine {
         applyVolume();
     }
 
-    public void mute() {}
+    public void mute() {
+        muted = !muted;
+        applyVolume();
+    }
+
+    public void setMuted(boolean m) {
+        muted = m;
+        applyVolume();
+    }
+
+    public boolean isMuted() { return muted; }
 
     // ======================== 内部 ========================
 
@@ -336,7 +349,7 @@ public class PlayerEngine {
                 FloatControl vol = (FloatControl) line.getControl(FloatControl.Type.MASTER_GAIN);
                 float min = vol.getMinimum();
                 float max = vol.getMaximum();
-                if (volumePercent <= 0) {
+                if (muted || volumePercent <= 0) {
                     vol.setValue(min);
                 } else {
                     // 百分比 → 分贝（对数映射）：100%≈0dB，50%≈-6dB，近似线性响度
@@ -352,6 +365,7 @@ public class PlayerEngine {
     public boolean isPaused() { return paused; }
     public boolean isPlaying() { return playing; }
     public int getCurrentSongIndex() { return currentSongIndex; }
+    public int getVolumePercent() { return volumePercent; }
     public int getDuration() { return (int) (durationUs / 1000000); }
     public long getPositionMs() { return positionUs / 1000; }
     public int getPosition() { return (int) (positionUs / 1000000); }

@@ -65,6 +65,12 @@ public class WindowAssembler {
         hub.miniWindow.setOnToggleLyric(() -> {
             if (hub.lyric != null) hub.lyric.setVisible(!hub.lyric.isVisible());
         });
+        hub.miniWindow.setOnVolumeChanged(hub.player::setVolumeFromPercent);
+        hub.miniWindow.setOnMuteChanged(() -> {
+            if (hub.player != null && hub.player.btnMute != null) {
+                hub.player.btnMute.setSelected(hub.playerEngine != null && hub.playerEngine.isMuted());
+            }
+        });
 
         hub.player.setOnHideToTray(hub::hideAllWindowsToTray);
         bindPlayerButtons();
