@@ -134,6 +134,7 @@ public class LyricWindow extends SkinWindow {
                 LRCParser parser = new LRCParser();
                 LRCParser.LRCData data = parser.parse(lrcFile);
                 renderer.setLyrics(data.lines);
+                renderer.adjustFontToLyrics(); // 按歌词内容语言自动选字体
                 return;
             } catch (IOException ignored) {
             }

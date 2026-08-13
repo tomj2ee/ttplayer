@@ -32,6 +32,20 @@ public class DesktopLyricWindow extends JWindow {
     private float bgAlpha = 0.3f;
     private Font lyricFont;
 
+    /**
+     * 依据歌词文本实际语言自动选择能覆盖全部字形的字体，
+     * 韩文/日文歌词不出现豆腐块。
+     */
+    private void adjustFontToLyrics() {
+        if (lines == null || lines.isEmpty()) return;
+        StringBuilder all = new StringBuilder();
+        for (org.ttplayer.lyrics.LRCLine line : lines) {
+            if (line.getText() != null) all.append(line.getText()).append('\n');
+        }
+        int size = lyricFont != null ? lyricFont.getSize() : 24;
+        lyricFont = org.ttplayer.util.FontUtils.getLyricFontByText(all.toString(), null, Font.PLAIN, size);
+    }
+
     // 拖动相关
     private Point dragStartScreen;
     private Point dragStartWindow;
@@ -249,6 +263,7 @@ public class DesktopLyricWindow extends JWindow {
                 LRCParser.LRCData data = parser.parse(lrcFile);
                 this.lines = data.lines;
                 this.currentLineIndex = -1;
+                adjustFontToLyrics(); // 按歌词内容语言自动选字体
                 repaint();
                 return;
             } catch (IOException ignored) {

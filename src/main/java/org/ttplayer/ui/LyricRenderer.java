@@ -178,6 +178,24 @@ public class LyricRenderer extends JPanel {
 
     public void setLoading(boolean l) { this.loading = l; repaint(); }
 
+    /**
+     * 依据歌词文本实际语言（中文/韩文/日文/混合）自动选择能覆盖全部字形的字体。
+     * 皮肤未指定字体或指定字体能力不足时，也能保证谚文/假名等不出现豆腐块。
+     */
+    public void adjustFontToLyrics() {
+        if (lines == null || lines.isEmpty()) return;
+        StringBuilder all = new StringBuilder();
+        for (LRCLine line : lines) {
+            if (line.getText() != null) all.append(line.getText()).append('\n');
+        }
+        int size = lyricFont != null ? lyricFont.getSize() : 14;
+        String pref = lyricFont != null ? lyricFont.getFamily() : null;
+        Font base = org.ttplayer.util.FontUtils.getLyricFontByText(all.toString(), pref, Font.PLAIN, size);
+        lyricFont = base.deriveFont(Font.PLAIN, size);
+        currentFont = base.deriveFont(Font.BOLD, size + 2);
+        repaint();
+    }
+
     /** 外部或 50ms 定时器调用：根据播放时间定位当前行（对应 C lyric_window_update） */
     public void setCurrentTime(long positionMs) {
         playbackTimeMs = positionMs;
@@ -218,7 +236,8 @@ public class LyricRenderer extends JPanel {
         g2.fillRect(0, 0, w, h);
 
         int fs = 14;
-        int lh = lineHeight(h);
+        // 行高取「窗口行高公式」与「实际字高」的较大者，避免换字体后行间重叠/画出行
+        int lh = Math.max(lineHeight(h), measuredLineHeight());
         int centerY = h / 2;
 
         // 空歌词提示（加载中动画 / 暂无歌词）
@@ -248,7 +267,7 @@ public class LyricRenderer extends JPanel {
         for (int i = 0; i < lines.size(); i++) {
             float offset = i - centerLine;
             int y = centerY + (int) (offset * lh);
-            if (y + fs < 0 || y > h) continue;
+            if (y < -fs || y > h + fs) continue;
 
             // 距中心越远越透明（对应 C：alpha = 1 - |offset|*0.22，下限 0.15）
             float dist = Math.abs(offset);
@@ -260,10 +279,23 @@ public class LyricRenderer extends JPanel {
 
             g2.setFont(lyricFont);
             FontMetrics fm = g2.getFontMetrics();
-            int tw = fm.stringWidth(line.getText());
+            // 实际字体度量：行高用于垂直居中/裁剪依据，超长行可横向缩字号防溢出窗口边界
             int th = fm.getHeight();
+            int wrappedW = getWidth();
+            Font lineFont = lyricFont;
+            if (fm.stringWidth(line.getText()) > wrappedW) {
+                // 行太宽（如长韩文标题）→ 降字号到宽度内
+                int shrink = Math.max(9, lyricFont.getSize() - 4);
+                lineFont = lyricFont.deriveFont((float) shrink);
+                fm = g2.getFontMetrics(lineFont);
+                g2.setFont(lineFont);
+            }
+            String text = line.getText();
+            int tw = fm.stringWidth(text);
             int baseline = y + (lh - th) / 2 + fm.getAscent();
             int tx = (w - tw) / 2;
+            // 文本不越过窗口左右边界的裁剪
+            g2.setClip(0, 0, w, h);
 
             if (isHL && karaokeEnabled) {
                 // 逐字高亮：已唱部分白色、未唱部分高亮色（对应 C karaoke）
@@ -275,18 +307,19 @@ public class LyricRenderer extends JPanel {
                 if (prog > 1) prog = 1;
 
                 g2.setColor(withAlpha(highlightColor, alpha));
-                g2.drawString(line.getText(), tx, baseline);
+                g2.drawString(text, tx, baseline);
 
                 if (prog > 0 && tw > 0) {
                     int shot = (int) (tw * prog);
+                    // 卡拉OK 已唱部分：仅对已唱宽度高亮，仍受窗口边界裁剪
                     g2.setColor(withAlpha(wordColor, alpha));
-                    g2.setClip(tx, baseline - fm.getAscent(), shot, th);
-                    g2.drawString(line.getText(), tx, baseline);
-                    g2.setClip(null);
+                    g2.setClip(Math.max(0, tx), baseline - fm.getAscent(), Math.min(shot, w - Math.max(0, tx)), th);
+                    g2.drawString(text, tx, baseline);
+                    g2.setClip(0, 0, w, h);
                 }
             } else {
                 g2.setColor(isHL ? withAlpha(highlightColor, alpha) : withAlpha(textColor, alpha));
-                g2.drawString(line.getText(), tx, baseline);
+                g2.drawString(text, tx, baseline);
             }
         }
 
