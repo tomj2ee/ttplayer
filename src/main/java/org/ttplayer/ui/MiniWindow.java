@@ -93,15 +93,6 @@ public class MiniWindow extends SkinWindow {
 
     public void setOnVolumeChanged(java.util.function.IntConsumer c) { this.onVolumeChanged = c; }
 
-    /** 滚轮调音量后，在信息栏短暂显示音量百分比 */
-    private void showVolume(int percent) {
-        if (infoLabel == null) return;
-        stopAllAnimations();
-        infoLabel.setText(org.ttplayer.util.Messages.get("volume.displayPrefix") + percent + "%");
-        infoDisplayIndex = 0;
-        startPauseBeforeNext();
-    }
-
     @Override
     public void setVisible(boolean visible) {
         if (visible) {
