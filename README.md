@@ -93,11 +93,11 @@ FFmpeg 原生库按平台分别引入，体积比 `javacv-platform`（含全部�
 
 ```bash
 mvn clean package -Pall
-# 产物 / Output: target/ttplayer-1.0-SNAPSHOT-macosx-x86_64.jar
-#                target/ttplayer-1.0-SNAPSHOT-macosx-arm64.jar
-#                target/ttplayer-1.0-SNAPSHOT-windows-x86_64.jar
-#                target/ttplayer-1.0-SNAPSHOT-linux-x86_64.jar
-#                target/ttplayer-1.0-SNAPSHOT-linux-arm64.jar
+# 产物 / Output: target/ttplayer-1.0.0-macosx-x86_64.jar
+#                target/ttplayer-1.0.0-macosx-arm64.jar
+#                target/ttplayer-1.0.0-windows-x86_64.jar
+#                target/ttplayer-1.0.0-linux-x86_64.jar
+#                target/ttplayer-1.0.0-linux-arm64.jar
 ```
 
 **只打包单个平台**，用 `-Djavacpp.platform=xxx` 指定：
@@ -256,7 +256,7 @@ The UI supports **Chinese / English / 日本語 / 한국어 / Deutsch switching*
 
 ```bash
 # Clone
-git clone https://github.com/yourusername/ttplayer.git
+git clone https://github.com/tomj2ee/ttplayer.git
 cd ttplayer
 
 # Build (auto-selects FFmpeg natives for the current platform, produces a runnable fat jar)
@@ -279,11 +279,11 @@ FFmpeg natives are added per platform (much smaller than `javacv-platform`). The
 
 ```bash
 mvn clean package -Pall
-# Output: target/ttplayer-1.0-SNAPSHOT-macosx-x86_64.jar
-#         target/ttplayer-1.0-SNAPSHOT-macosx-arm64.jar
-#         target/ttplayer-1.0-SNAPSHOT-windows-x86_64.jar
-#         target/ttplayer-1.0-SNAPSHOT-linux-x86_64.jar
-#         target/ttplayer-1.0-SNAPSHOT-linux-arm64.jar
+# Output: target/ttplayer-1.0.0-macosx-x86_64.jar
+#         target/ttplayer-1.0.0-macosx-arm64.jar
+#         target/ttplayer-1.0.0-windows-x86_64.jar
+#         target/ttplayer-1.0.0-linux-x86_64.jar
+#         target/ttplayer-1.0.0-linux-arm64.jar
 ```
 
 **Build a single platform** with `-Djavacpp.platform=xxx`:
