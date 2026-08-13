@@ -206,6 +206,9 @@ jobs:
     name: Publish GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
     needs: [ build, package ]
+    # 创建/更新 Release 及上传附件需要写权限（默认 GITHUB_TOKEN 是只读）
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Download jars
