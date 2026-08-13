@@ -34,8 +34,8 @@ public class LyricRenderer extends JPanel {
     public Color bgColor = new Color(0, 0, 0);               // BkgndColor：歌词区背景
     public Color wordColor = Color.WHITE;                    // (可选)已唱部分颜色，皮肤可配 HilightWordColor
     public boolean karaokeEnabled = true;
-    public Font lyricFont = new Font("Dialog", Font.PLAIN, 14);
-    public Font currentFont = new Font("Dialog", Font.BOLD, 14);
+    public Font lyricFont = org.ttplayer.util.FontUtils.getLyricFont(null, Font.PLAIN, 14);
+    public Font currentFont = org.ttplayer.util.FontUtils.getLyricFont(null, Font.BOLD, 14);
 
     // ---- 拖拽预览状态（对应 C lyric_window_events.c） ----
     private boolean dragging;

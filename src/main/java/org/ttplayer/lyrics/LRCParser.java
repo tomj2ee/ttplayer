@@ -135,6 +135,8 @@ public class LRCParser {
         try {
             byte[] bytes = Files.readAllBytes(file.toPath());
             if (isValidUTF8(bytes)) return Charset.forName("UTF-8");
+            // 韩文歌词常用 EUC-KR / MS949（KSC 5601 超集）；无法以 UTF-8 解码时优先尝试
+            if (isValidCharset(bytes, "EUC-KR")) return Charset.forName("EUC-KR");
             return Charset.forName("GBK");
         } catch (Exception e) {
             return Charset.forName("GBK");
@@ -142,8 +144,42 @@ public class LRCParser {
     }
 
     private static boolean isValidUTF8(byte[] bytes) {
+        // 严格 UTF-8 校验：逐字节是否符合 UTF-8 多字节序列规则（new String 不会因非法序列抛异常，
+        // 而是静默替换为 U+FFFD，因此必须手动校验，否则韩文 EUC-KR 会被误判为 UTF-8）
+        int i = 0;
+        int n = bytes.length;
+        while (i < n) {
+            int b = bytes[i] & 0xFF;
+            if (b < 0x80) { i++; continue; }
+            int need;
+            if ((b & 0xE0) == 0xC0) need = 1;      // 110xxxxx → 1 continuation
+            else if ((b & 0xF0) == 0xE0) need = 2;  // 1110xxxx → 2
+            else if ((b & 0xF8) == 0xF0) need = 3;  // 11110xxx → 3
+            else return false;                       // invalid leading byte
+            if (i + need >= n) return false;
+            for (int j = 1; j <= need; j++) {
+                if ((bytes[i + j] & 0xC0) != 0x80) return false; // must be 10xxxxxx
+            }
+            // 禁止 overlong / 超出 Unicode 范围
+            if (need == 1 && b < 0xC2) return false;
+            if (need == 2 && b == 0xE0 && (bytes[i + 1] & 0xE0) == 0x80) return false;
+            if (need == 2 && b == 0xED && (bytes[i + 1] & 0xE0) == 0xA0) return false; // surrogates
+            if (need == 3 && b == 0xF0 && (bytes[i + 1] & 0xF0) == 0x80) return false;
+            if (need == 3 && b == 0xF4 && (bytes[i + 1] & 0xF0) > 0x80) return false;
+            if (need == 3 && b > 0xF4) return false;
+            i += need + 1;
+        }
+        return true;
+    }
+
+    private static boolean isValidCharset(byte[] bytes, String charset) {
+        // 尝试以指定字符集做“严格”替换解码校验：能解完且不产生 U+FFFD 视为可行
         try {
-            new String(bytes, "UTF-8");
+            java.nio.charset.CharsetDecoder decoder = Charset.forName(charset)
+                    .newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT);
+            decoder.decode(java.nio.ByteBuffer.wrap(bytes));
             return true;
         } catch (Exception e) {
             return false;

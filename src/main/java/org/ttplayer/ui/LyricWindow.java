@@ -112,8 +112,8 @@ public class LyricWindow extends SkinWindow {
             if (parts.length > 4 && Integer.parseInt(parts[4].trim()) >= 700) style = Font.BOLD;
             String fontName = parts.length > 13 ? parts[13].trim() : null;
 
-            renderer.lyricFont = FontUtils.getChineseFont(fontName, style, size);
-            renderer.currentFont = FontUtils.getChineseFont(fontName, Font.BOLD, size + 2);
+            renderer.lyricFont = FontUtils.getLyricFont(fontName, style, size);
+            renderer.currentFont = FontUtils.getLyricFont(fontName, Font.BOLD, size + 2);
         } catch (Exception ignored) {
         }
     }

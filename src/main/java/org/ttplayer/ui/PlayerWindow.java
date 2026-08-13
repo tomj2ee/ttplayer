@@ -421,9 +421,9 @@ public class PlayerWindow extends SkinWindow {
             if (is != null) {
                 BufferedImage img = javax.imageio.ImageIO.read(is);
                 if (img != null) {
-                    int w = ctl.right - ctl.left;
-                    int h = ctl.bottom - ctl.top;
-                    Image scaled = img.getScaledInstance(w, h, Image.SCALE_SMOOTH);
+//                    int w = ctl.right - ctl.left;
+//                    int h = ctl.bottom - ctl.top;
+                    Image scaled = img.getScaledInstance(img.getWidth(), img.getHeight(), Image.SCALE_SMOOTH);
                     iconLabel.setIcon(new ImageIcon(scaled));
                 }
             }
@@ -477,7 +477,7 @@ public class PlayerWindow extends SkinWindow {
         try {
             org.w3c.dom.Document doc = org.ttplayer.util.UIUtils.parseXml(data);
             if (doc == null) return;
-            org.w3c.dom.Element visEl = (org.w3c.dom.Element) doc.getDocumentElement();
+            org.w3c.dom.Element visEl = doc.getDocumentElement();
             org.w3c.dom.Element vis = (org.w3c.dom.Element) visEl.getElementsByTagName("Visual").item(0);
             if (vis == null) return;
             visualizer.skinColorTop = org.ttplayer.util.UIUtils.getColorAttribute(vis, "SpectrumTopColor", visualizer.skinColorTop);

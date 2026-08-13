@@ -44,7 +44,7 @@ public class DesktopLyricWindow extends JWindow {
 
     public DesktopLyricWindow(PlayerEngine engine) {
         this.playerEngine = engine;
-        lyricFont = FontUtils.getDefaultChineseFont(24);
+        lyricFont = FontUtils.getLyricFont(null, Font.PLAIN, 24);
         initUI();
         startUpdateTimer();
     }
