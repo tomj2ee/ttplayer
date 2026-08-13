@@ -1,0 +1,63 @@
+name: Build
+
+# 触发条件：
+#   - 推送 main/master 分支
+#   - 推送 v* 标签（如 v1.0.0）→ 额外发布 GitHub Release
+#   - PR
+#   - 手动触发（workflow_dispatch）
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build jars (macOS · Linux · Windows)
+    # 单台 ubuntu runner 通过 -P all 一次产出全部平台 fat jar
+    #（FFmpeg/JavaCPP 原生库是预编译 classifier，从 Maven 中央仓库下载，无需真实各平台 runner）
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 8
+          cache: maven
+
+      - name: Build all-platform fat jars
+        run: mvn -B -P all -DskipTests package
+
+      - name: List produced jars
+        run: ls -lh target/*.jar
+
+      - name: Upload jars as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ttplayer-jars
+          path: |
+            target/ttplayer*.jar
+            target/ttplayer.jar
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download jars
+        uses: actions/download-artifact@v4
+        with:
+          name: ttplayer-jars
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TTPlayer ${{ github.ref_name }}
+          files: dist/*.jar
