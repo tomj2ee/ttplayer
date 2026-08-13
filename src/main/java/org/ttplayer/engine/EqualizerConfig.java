@@ -5,12 +5,12 @@ import java.nio.file.*;
 import java.util.Properties;
 
 /**
- * 均衡器参数持久化 — 保存到 config/equalizer.properties。
+ * 均衡器参数持久化 — 保存到 ~/.ttplayer/equalizer.properties。
  * 覆盖：启用、杜比环绕、preamp、10 段增益、平衡/环绕滑块、当前类别。
  */
 public class EqualizerConfig {
 
-    private static final Path CONFIG_PATH = Paths.get("config", "equalizer.properties");
+    private static final Path CONFIG_PATH = Paths.get(System.getProperty("user.home"), ".ttplayer", "equalizer.properties");
 
     public static class State {
         public boolean enabled;

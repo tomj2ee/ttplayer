@@ -8,7 +8,7 @@ import java.util.Properties;
 
 public class WindowConfig {
 
-    private static final Path CONFIG_PATH = Paths.get("config", "windows.properties");
+    private static final Path CONFIG_PATH = Paths.get(System.getProperty("user.home"), ".ttplayer", "windows.properties");
 
     public static void saveAll(JFrame main, JFrame lyric, JFrame eq, JFrame playlist, String skinPath) {
         saveAll(main, lyric, eq, playlist, null, false, skinPath);

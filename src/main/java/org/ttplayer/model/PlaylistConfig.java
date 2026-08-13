@@ -23,7 +23,7 @@ import org.ttplayer.util.Messages;
  */
 public class PlaylistConfig {
 
-    private static final String CONFIG_DIR = "config";
+    private static final String CONFIG_DIR = System.getProperty("user.home") + "/.ttplayer";
     private static final String FILE_NAME = "playlists.xml";
 
     public static void save(PlaylistManager manager, int currentSongIndex) {
