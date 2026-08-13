@@ -49,7 +49,7 @@
 
 | 组件 | 技术 |
 |------|------|
-| 语言 | Java 8 |
+| 语言 | Java 25 |
 | UI | Swing（无边框窗口、半透明、自定义控件） |
 | 音频解码 | JavaCV 1.5.9 + FFmpeg 6.0（按平台引入原生库） |
 | 音频输出 | javax.sound (SourceDataLine) |
@@ -62,7 +62,7 @@
 
 ### 环境要求
 
-- JDK 8+
+- JDK 25+
 - Maven
 
 ### 构建与运行
@@ -236,7 +236,7 @@ The UI supports **Chinese / English / 日本語 / 한국어 / Deutsch switching*
 
 | Component | Technology |
 |-----------|------------|
-| Language | Java 8 |
+| Language | Java 25 |
 | UI | Swing (frameless, translucent, custom controls) |
 | Audio Decode | JavaCV 1.5.9 + FFmpeg 6.0 (platform-specific natives) |
 | Audio Output | javax.sound (SourceDataLine) |
@@ -249,7 +249,7 @@ The UI supports **Chinese / English / 日本語 / 한국어 / Deutsch switching*
 
 ### Requirements
 
-- JDK 8+
+- JDK 25+
 - Maven
 
 ### Build & Run

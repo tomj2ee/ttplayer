@@ -22,11 +22,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 8
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 8
+          java-version: 25
           cache: maven
 
       - name: Build all-platform fat jars
@@ -47,11 +47,40 @@ jobs:
           done
           ls -lh target/collect/
 
-      - name: Upload jars as artifact
+      # 按平台拆分成独立 artifact，每个 package runner 只下载自己平台的 1 个 jar
+      - name: Upload jar (macOS Intel)
         uses: actions/upload-artifact@v4
         with:
-          name: ttplayer-jars
-          path: target/collect/*.jar
+          name: ttplayer-jar-macosx-x86_64
+          path: target/collect/ttplayer-1.0.0-macosx-x86_64.jar
+          if-no-files-found: error
+
+      - name: Upload jar (macOS ARM)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ttplayer-jar-macosx-arm64
+          path: target/collect/ttplayer-1.0.0-macosx-arm64.jar
+          if-no-files-found: error
+
+      - name: Upload jar (Windows x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ttplayer-jar-windows-x86_64
+          path: target/collect/ttplayer-1.0.0-windows-x86_64.jar
+          if-no-files-found: error
+
+      - name: Upload jar (Linux x64)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ttplayer-jar-linux-x86_64
+          path: target/collect/ttplayer-1.0.0-linux-x86_64.jar
+          if-no-files-found: error
+
+      - name: Upload jar (Linux ARM)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ttplayer-jar-linux-arm64
+          path: target/collect/ttplayer-1.0.0-linux-arm64.jar
           if-no-files-found: error
 
   package:
@@ -67,8 +96,7 @@ jobs:
         include:
           - os: windows-latest   # Windows x64 → .msi + .exe
             platform: windows-x86_64
-          - os: macos-13         # macOS Intel → .dmg
-            platform: macosx-x86_64
+          # macOS Intel（macosx-x86_64）不再用 jpackage 打 .dmg，直接发布 jar 包
           - os: macos-14         # macOS Apple Silicon → .dmg
             platform: macosx-arm64
           - os: ubuntu-latest    # Linux x64 → .deb
@@ -79,26 +107,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # jpackage 要求 JDK 14+；JDK 17 LTS 可运行 Java 8 字节码，且自带 jpackage。
+      # jpackage 绑定平台与 JDK 版本：用 JDK 25 打包，安装包内附带的运行时即 JDK 25。
       # setup-java 会按 runner 架构安装对应 JDK（arm64 runner 装 arm64 JDK）。
-      - name: Set up JDK 17
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 25
 
-      - name: Download fat jar
+      # 只下载本平台的 1 个 fat jar 作为 jpackage --input，不带任何其他平台 jar
+      - name: Download matching fat jar
         uses: actions/download-artifact@v4
         with:
-          name: ttplayer-jars
-          path: jar_input
-
-      - name: Prepare input dir
-        # jpackage 会把 --input 目录里所有文件打进包，只保留当前平台 jar
-        shell: bash
-        run: |
-          mkdir -p input
-          cp "jar_input/ttplayer-1.0.0-${{ matrix.platform }}.jar" input/
+          name: ttplayer-jar-${{ matrix.platform }}
+          path: input
 
       - name: Prepare icon (Windows)
         if: matrix.os == 'windows-latest'
@@ -189,8 +211,9 @@ jobs:
       - name: Download jars
         uses: actions/download-artifact@v4
         with:
-          name: ttplayer-jars
+          pattern: ttplayer-jar-*
           path: dist
+          merge-multiple: true
 
       - name: Download installers
         uses: actions/download-artifact@v4
@@ -207,7 +230,7 @@ jobs:
         with:
           name: TTPlayer ${{ github.ref_name }}
           body: |
-            ## 可执行 fat jar（JDK 8+，`java -jar` 直接运行）
+            ## 可执行 fat jar（JDK 25+，`java -jar` 直接运行）
 
             | 平台 | 文件 |
             |------|------|
@@ -223,10 +246,11 @@ jobs:
             |------|------|
             | Windows x64 (.msi) | 安装后自带开始菜单/桌面快捷方式 |
             | Windows x64 (.exe) | 安装引导程序 |
-            | macOS Intel (.dmg) | 拖入 Applications 即可 |
             | macOS Apple Silicon (.dmg) | 拖入 Applications 即可 |
             | Linux x64 (.deb) | `sudo dpkg -i` 安装 |
             | Linux ARM64 (.deb) | `sudo dpkg -i` 安装 |
+
+            **macOS Intel 用户**：请使用上表 jar `ttplayer-1.0.0-macosx-x86_64.jar`，以 JDK 25 运行（`java -jar`）。
 
             > 配置存储于 `~/.ttplayer/`（Windows `%USERPROFILE%\.ttplayer`）。macOS 未签名，首次启动如被拦截请在系统设置中允许，或右键 → 打开。
           files: |
