@@ -66,6 +66,14 @@ public class LRCParser {
             Matcher matcher = LRC_TAG.matcher(line);
             List<LRCLine> currentGroup = new ArrayList<>();
 
+            // 行尾歌词文本（最后一个时间标签之后的内容）：空段标签（[t1][t2]歌词）继承它，
+            // 纯空行（如 [00:10]）则丢弃，避免歌词显示出一大片空行
+            String trailingText = "";
+            Matcher lastTag = LRC_TAG.matcher(line);
+            int lastEnd = -1;
+            while (lastTag.find()) lastEnd = lastTag.end();
+            if (lastEnd >= 0) trailingText = line.substring(lastEnd).trim();
+
             while (matcher.find()) {
                 int minutes = Integer.parseInt(matcher.group(1));
                 String secStr = matcher.group(2);
@@ -87,6 +95,8 @@ public class LRCParser {
                 } else {
                     text = line.substring(start).trim();
                 }
+                if (text.isEmpty() && !trailingText.isEmpty()) text = trailingText;
+                if (text.isEmpty()) continue;
                 currentGroup.add(new LRCLine(timeMs, text));
             }
 

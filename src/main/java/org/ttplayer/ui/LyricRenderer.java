@@ -126,7 +126,7 @@ public class LyricRenderer extends JPanel {
 
     private void updateDragTarget(int y) {
         if (!hasLyrics()) return;
-        int lh = lineHeight(getHeight());
+        int lh = lineHeight();
         dragDeltaPx = y - dragAnchorY;
         float frac = dragBaseLine - dragDeltaPx / (float) lh;
         int target = (int) (frac + (frac >= 0 ? 0.5f : -0.5f));
@@ -213,12 +213,11 @@ public class LyricRenderer extends JPanel {
 
     // ==================== 渲染（对应 C lyric_window_render.c） ====================
 
-    private int lineHeight(int areaH) {
-        int a = Math.max(30, areaH);
-        int lh = 24 + (a - 100) / 12;
-        if (lh < 24) lh = 24;
-        if (lh > 44) lh = 44;
-        return lh;
+    /** 固定歌词行距（像素），不随窗口高度变化 */
+    private static final int LINE_HEIGHT = 26;
+
+    private int lineHeight() {
+        return LINE_HEIGHT;
     }
 
     /** 当前歌词字体的实际行高（getHeight），若字体为 null 则返回默认 20 */
@@ -248,8 +247,8 @@ public class LyricRenderer extends JPanel {
         g2.fillRect(0, 0, w, h);
 
         int fs = 14;
-        // 行高取「窗口行高公式」与「实际字高」的较大者，避免换字体后行间重叠/画出行
-        int lh = Math.max(lineHeight(h), measuredLineHeight());
+        // 固定行距，但与「实际字高」取较大者，避免换大字体后行间重叠
+        int lh = Math.max(lineHeight(), measuredLineHeight());
         int centerY = h / 2;
 
         // 空歌词提示（加载中动画 / 暂无歌词）
