@@ -5,6 +5,7 @@ import org.ttplayer.engine.PlayerEngine;
 import org.ttplayer.skin.TtSkin;
 import org.ttplayer.controls.TtButton;
 import org.ttplayer.controls.TtTrackBar;
+import org.ttplayer.controls.TtVolumeBar;
 import org.ttplayer.util.ColorUtils;
 
 import javax.swing.*;
@@ -18,10 +19,14 @@ public class MiniWindow extends SkinWindow {
     private JLabel infoLabel;
     private TtButton btnPrev, btnPlay, btnPause, btnNext, btnStop;
     private TtButton btnLyric, btnMinimize, btnExit;
+    private TtButton btnMute;
     private TtTrackBar progressBar;
+    private TtVolumeBar volumeBar;
     private TtVisualizer visualizer;
     private Runnable onExitMiniMode;
     private Runnable onToggleLyric;
+    private Runnable onMuteChanged;
+    private java.util.function.IntConsumer onVolumeChanged;
     private PlayerEngine playerEngine;
 
     // 歌曲信息轮播
@@ -82,7 +87,11 @@ public class MiniWindow extends SkinWindow {
         };
         addMouseListener(dragAdapter);
         addMouseMotionListener(dragAdapter);
+
+
     }
+
+    public void setOnVolumeChanged(java.util.function.IntConsumer c) { this.onVolumeChanged = c; }
 
     @Override
     public void setVisible(boolean visible) {
@@ -101,6 +110,9 @@ public class MiniWindow extends SkinWindow {
                     }
                 }
             }
+            // 显示时同步音量和静音状态（可能已在主窗口调整过）
+            if (volumeBar != null && playerEngine != null) volumeBar.setValue(playerEngine.getVolumePercent());
+            if (btnMute != null && playerEngine != null) btnMute.setSelected(playerEngine.isMuted());
             // 显示时恢复轮播
             stopAllAnimations();
             if (infoLabel != null && (!currentTitle.isEmpty() || !currentArtist.isEmpty())) {
@@ -171,6 +183,22 @@ public class MiniWindow extends SkinWindow {
                     btnLyric = createButton(c); tip(btnLyric, org.ttplayer.util.Messages.get("tooltip.toggleLyric"));
                     if (btnLyric != null) btnLyric.addActionListener(e -> { if (onToggleLyric != null) onToggleLyric.run(); });
                     break;
+                case "mute":
+                    btnMute = createButton(c);
+                    if (btnMute != null) {
+                        tip(btnMute, org.ttplayer.util.Messages.get("tooltip.mute"));
+                        btnMute.setSelected(playerEngine != null && playerEngine.isMuted());
+                        btnMute.addActionListener(e -> {
+                            if (playerEngine == null) return;
+                            playerEngine.mute();
+                            btnMute.setSelected(playerEngine.isMuted());
+                            if (onMuteChanged != null) onMuteChanged.run();
+                        });
+                    }
+                    break;
+                case "volume":
+                    createVolumeBar(c);
+                    break;
                 case "icon":
                     try {
                         createTitleImage(c);
@@ -217,6 +245,31 @@ public class MiniWindow extends SkinWindow {
             if (playerEngine != null) playerEngine.seekTo(seconds);
         });
     }
+
+    private void createVolumeBar(TtSkin.Ctl ctl) {
+        byte[] fillData = (ctl.fillImage != null && !ctl.fillImage.isEmpty()) ? skin.getBmp(ctl.fillImage) : null;
+        byte[] thumbData = (ctl.thumbImage != null && !ctl.thumbImage.isEmpty()) ? skin.getBmp(ctl.thumbImage) : null;
+        volumeBar = new TtVolumeBar(fillData, thumbData);
+        volumeBar.setBounds(ctl.left, ctl.top, ctl.right - ctl.left, ctl.bottom - ctl.top);
+        getContentPane().add(volumeBar);
+        addControl(volumeBar, ctl);
+        if (playerEngine != null) volumeBar.setValue(playerEngine.getVolumePercent());
+        volumeBar.setVolumeListener(percent -> {
+            if (playerEngine != null) playerEngine.setGainFromPercent(percent);
+            if (onVolumeChanged != null) onVolumeChanged.accept(percent);
+        });
+    }
+
+    /** 外部（主窗口/引擎）音量变化时同步迷你窗口音量条 */
+    public void setVolume(int percent) {
+        if (volumeBar != null) volumeBar.setValue(Math.max(0, Math.min(100, percent)));
+    }
+
+    public void setMuted(boolean m) {
+        if (btnMute != null) btnMute.setSelected(m);
+    }
+
+    public void setOnMuteChanged(Runnable r) { this.onMuteChanged = r; }
 
     private void updateProgress() {
         if (playerEngine == null || progressBar == null) return;

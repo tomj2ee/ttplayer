@@ -2,6 +2,7 @@ package org.ttplayer.audio;
 
 import java.awt.*;
 import java.awt.geom.Path2D;
+import java.awt.image.BufferedImage;
 import java.util.Arrays;
 
 /**
@@ -24,11 +25,18 @@ public class TtVisualizer extends javax.swing.JComponent {
     private Mode mode = Mode.BARS;
     private TtRdft rdft = new TtRdft();
 
+    /** 频谱区域背景：必须不透明，否则会透出窗口下层（白闪/透明） */
+    public Color backgroundColor = new Color(16, 22, 30);
+
     public Color skinColorTop;
     public Color skinColorMid;
     public Color skinColorBtm;
     public Color skinColorPeak;
     public Color skinColorBlur;
+
+    public TtVisualizer() {
+        setOpaque(true);
+    }
 
     // 当前 FFT 幅度谱（前 FFT_N/2 个 bin）
     private float[] spectrumBins = new float[TtRdft.FFT_N / 2];
@@ -151,25 +159,45 @@ public class TtVisualizer extends javax.swing.JComponent {
 
     // ============ 渲染分发 ============
 
+    // ============ 双缓存 ============
+
+    /** 离屏后缓冲：整帧渲染完成后一次性 blit，避免逐元素绘制闪烁 */
+    private BufferedImage backBuffer;
+
+    private void ensureBuffer(int w, int h) {
+        if (backBuffer == null || backBuffer.getWidth() != w || backBuffer.getHeight() != h) {
+            backBuffer = new BufferedImage(Math.max(1, w), Math.max(1, h), BufferedImage.TYPE_INT_ARGB);
+        }
+    }
+
     @Override
     protected void paintComponent(Graphics g) {
         int w = getWidth(), h = getHeight();
         if (w <= 0 || h <= 0) return;
 
-        Graphics2D g2 = (Graphics2D) g.create();
-        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        ensureBuffer(w, h);
+        Graphics2D bg = backBuffer.createGraphics();
+        try {
+            bg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        switch (mode) {
-            case BARS:        drawBars(g2); break;
-            case WAVE:        drawWave(g2); break;
-            case MIRROR_BARS: drawMirrorBars(g2); break;
-            case PARTICLES:   drawParticles(g2); break;
-            case LINE:        drawLine(g2); break;
-            case AREA:        drawArea(g2); break;
-            case RADAR:       drawRadar(g2); break;
-            case LED:         drawLed(g2); break;
+            // 先铺不透明背景，避免频谱区域透出窗口下层内容（白闪/透明感）
+            bg.setColor(backgroundColor);
+            bg.fillRect(0, 0, w, h);
+
+            switch (mode) {
+                case BARS:        drawBars(bg); break;
+                case WAVE:        drawWave(bg); break;
+                case MIRROR_BARS: drawMirrorBars(bg); break;
+                case PARTICLES:   drawParticles(bg); break;
+                case LINE:        drawLine(bg); break;
+                case AREA:        drawArea(bg); break;
+                case RADAR:       drawRadar(bg); break;
+                case LED:         drawLed(bg); break;
+            }
+        } finally {
+            bg.dispose();
         }
-        g2.dispose();
+        g.drawImage(backBuffer, 0, 0, null);
     }
 
     // ============ mode 0: 柱状频谱（C viz_bars） ============

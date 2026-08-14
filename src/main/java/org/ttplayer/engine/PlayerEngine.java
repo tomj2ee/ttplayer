@@ -51,6 +51,12 @@ public class PlayerEngine {
     private volatile boolean seekRequested;
     private volatile long seekTargetUs;
 
+    /** 当前音量百分比（0-100），与音量条保持一致 */
+    private volatile int volumePercent = 70;
+
+    /** 静音状态：静音时增益压到最低 */
+    private volatile boolean muted;
+
     private PlayerEngineListener listener;
 
     public interface PlayerEngineListener {
@@ -137,17 +143,21 @@ public class PlayerEngine {
     }
 
     public void setGainFromPercent(int percent) {
-        if (line != null && line.isOpen()) {
-            try {
-                FloatControl vol = (FloatControl) line.getControl(FloatControl.Type.MASTER_GAIN);
-                float min = vol.getMinimum();
-                float max = vol.getMaximum();
-                vol.setValue(min + (max - min) * percent / 100.0f);
-            } catch (Exception ignored) {}
-        }
+        volumePercent = Math.max(0, Math.min(100, percent));
+        applyVolume();
     }
 
-    public void mute() {}
+    public void mute() {
+        muted = !muted;
+        applyVolume();
+    }
+
+    public void setMuted(boolean m) {
+        muted = m;
+        applyVolume();
+    }
+
+    public boolean isMuted() { return muted; }
 
     // ======================== 内部 ========================
 
@@ -337,7 +347,15 @@ public class PlayerEngine {
         if (line != null && line.isOpen()) {
             try {
                 FloatControl vol = (FloatControl) line.getControl(FloatControl.Type.MASTER_GAIN);
-                vol.setValue(vol.getMaximum());
+                float min = vol.getMinimum();
+                float max = vol.getMaximum();
+                if (muted || volumePercent <= 0) {
+                    vol.setValue(min);
+                } else {
+                    // 百分比 → 分贝（对数映射）：100%≈0dB，50%≈-6dB，近似线性响度
+                    float db = 20f * (float) Math.log10(volumePercent / 100.0);
+                    vol.setValue(Math.max(min, Math.min(max, db)));
+                }
             } catch (Exception ignored) {}
         }
     }
@@ -347,6 +365,7 @@ public class PlayerEngine {
     public boolean isPaused() { return paused; }
     public boolean isPlaying() { return playing; }
     public int getCurrentSongIndex() { return currentSongIndex; }
+    public int getVolumePercent() { return volumePercent; }
     public int getDuration() { return (int) (durationUs / 1000000); }
     public long getPositionMs() { return positionUs / 1000; }
     public int getPosition() { return (int) (positionUs / 1000000); }
