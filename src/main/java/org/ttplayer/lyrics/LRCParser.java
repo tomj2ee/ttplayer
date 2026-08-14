@@ -96,7 +96,8 @@ public class LRCParser {
                     text = line.substring(start).trim();
                 }
                 if (text.isEmpty() && !trailingText.isEmpty()) text = trailingText;
-                if (text.isEmpty()) continue;
+                // 空文本条目也保留：它标记上一句的结束时间（间奏起点），
+                // 显示层负责隐藏它，但时间间隔不能被丢掉
                 currentGroup.add(new LRCLine(timeMs, text));
             }
 

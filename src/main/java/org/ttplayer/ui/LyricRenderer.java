@@ -251,6 +251,9 @@ public class LyricRenderer extends JPanel {
         int lh = Math.max(lineHeight(), measuredLineHeight());
         int centerY = h / 2;
 
+        // 卡拉OK已唱部分颜色：若与高亮色相同则自动派生对比色，保证已唱/未唱可区分
+        Color sungColor = effectiveKaraokeColor();
+
         // 空歌词提示（加载中动画 / 暂无歌词）
         if (!hasLyrics()) {
             g2.setFont(lyricFont);
@@ -286,6 +289,8 @@ public class LyricRenderer extends JPanel {
             if (alpha < 0.15f) alpha = 0.15f;
 
             LRCLine line = lines.get(i);
+            // 空歌词条目（[00:10] 无文本）只保留计时作用，不绘制
+            if (line.getText() == null || line.getText().isEmpty()) continue;
             boolean isHL = (i == highlightLine);
 
             g2.setFont(lyricFont);
@@ -323,7 +328,7 @@ public class LyricRenderer extends JPanel {
                 if (prog > 0 && tw > 0) {
                     int shot = (int) (tw * prog);
                     // 卡拉OK 已唱部分：仅对已唱宽度高亮，仍受窗口边界裁剪
-                    g2.setColor(withAlpha(wordColor, alpha));
+                    g2.setColor(withAlpha(sungColor, alpha));
                     g2.setClip(Math.max(0, tx), baseline - fm.getAscent(), Math.min(shot, w - Math.max(0, tx)), th);
                     g2.drawString(text, tx, baseline);
                     g2.setClip(0, 0, w, h);
@@ -382,6 +387,26 @@ public class LyricRenderer extends JPanel {
     private static Color withAlpha(Color c, float a) {
         return new Color(c.getRed(), c.getGreen(), c.getBlue(),
                 Math.round(Math.max(0, Math.min(1, a)) * 255));
+    }
+
+    /**
+     * 卡拉OK已唱部分颜色：wordColor 与 highlightColor 相同时（很多皮肤只配了 HilightColor 没配
+     * HilightWordColor），自动按亮度派生一个对比色，否则已唱/未唱无法区分。
+     */
+    private Color effectiveKaraokeColor() {
+        if (wordColor != null && !wordColor.equals(highlightColor)) return wordColor;
+        Color base = (highlightColor != null) ? highlightColor : Color.WHITE;
+        double lum = 0.299 * base.getRed() + 0.587 * base.getGreen() + 0.114 * base.getBlue();
+        int delta = 150;
+        if (lum > 150) {
+            return new Color(Math.max(0, base.getRed() - delta),
+                    Math.max(0, base.getGreen() - delta),
+                    Math.max(0, base.getBlue() - delta));
+        } else {
+            return new Color(Math.min(255, base.getRed() + delta),
+                    Math.min(255, base.getGreen() + delta),
+                    Math.min(255, base.getBlue() + delta));
+        }
     }
 
     private static String formatTime(long ms) {
