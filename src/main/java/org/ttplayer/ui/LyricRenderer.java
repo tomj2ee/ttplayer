@@ -293,16 +293,19 @@ public class LyricRenderer extends JPanel {
             if (line.getText() == null || line.getText().isEmpty()) continue;
             boolean isHL = (i == highlightLine);
 
-            g2.setFont(lyricFont);
+            // 当前行用 currentFont（粗体/稍大），其余行用 lyricFont
+            Font baseFont = (isHL && currentFont != null) ? currentFont : lyricFont;
+            if (baseFont == null) baseFont = lyricFont;
+            g2.setFont(baseFont);
             FontMetrics fm = g2.getFontMetrics();
             // 实际字体度量：行高用于垂直居中/裁剪依据，超长行可横向缩字号防溢出窗口边界
             int th = fm.getHeight();
             int wrappedW = getWidth();
-            Font lineFont = lyricFont;
+            Font lineFont = baseFont;
             if (fm.stringWidth(line.getText()) > wrappedW) {
                 // 行太宽（如长韩文标题）→ 降字号到宽度内
-                int shrink = Math.max(9, lyricFont.getSize() - 4);
-                lineFont = lyricFont.deriveFont((float) shrink);
+                int shrink = Math.max(9, baseFont.getSize() - 4);
+                lineFont = baseFont.deriveFont((float) shrink);
                 fm = g2.getFontMetrics(lineFont);
                 g2.setFont(lineFont);
             }
@@ -312,6 +315,13 @@ public class LyricRenderer extends JPanel {
             int tx = (w - tw) / 2;
             // 文本不越过窗口左右边界的裁剪
             g2.setClip(0, 0, w, h);
+
+            // 当前行加柔和阴影，突出层次
+            if (isHL) {
+                g2.setColor(new Color(0, 0, 0, (int) (60 * alpha)));
+                g2.drawString(text, tx + 1, baseline + 1);
+                g2.drawString(text, tx + 1, baseline + 2);
+            }
 
             if (isHL && karaokeEnabled) {
                 // 逐字高亮：已唱部分白色、未唱部分高亮色（对应 C karaoke）
