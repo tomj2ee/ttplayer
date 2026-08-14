@@ -232,13 +232,15 @@ jobs:
           # Archive the app dir next to the installers / 压缩 app 目录到 pkg_out，与安装包一并上传
           if [[ "$PLATFORM" == macosx-* ]]; then
             (cd app_out && zip -qr "TTPlayer-${PLATFORM}-app.zip" TTPlayer.app)
+            mv app_out/"TTPlayer-${PLATFORM}-app.zip" pkg_out/
           elif [[ "$PLATFORM" == windows-* ]]; then
             (cd app_out && powershell -NoProfile -Command \
               "Compress-Archive -Path TTPlayer -DestinationPath 'TTPlayer-${PLATFORM}-app.zip' -Force")
+            mv app_out/"TTPlayer-${PLATFORM}-app.zip" pkg_out/
           else
             (cd app_out && tar -czf "ttplayer-${PLATFORM}-app.tar.gz" TTPlayer)
+            mv app_out/"ttplayer-${PLATFORM}-app.tar.gz" pkg_out/
           fi
-          mv app_out/*.zip app_out/*.tar.gz pkg_out/
 
           ls -lh pkg_out/
 
