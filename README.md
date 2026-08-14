@@ -6,9 +6,9 @@
 
 **实际运行截图 / Real screenshots**
 
-![实际运行截图 1 / Real screenshot 1](screenshots/screenshot1.png)
+![ttplayer](screenshots/player-desk.gif)
 
-![实际运行截图 2 / Real screenshot 2](screenshots/screenshot2.png)
+![main](screenshots/main.jpg)
 
 ![实际运行截图 3 / Real screenshot 3](screenshots/screenshot3.png)
 
