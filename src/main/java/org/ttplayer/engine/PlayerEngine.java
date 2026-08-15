@@ -365,6 +365,7 @@ public class PlayerEngine {
     public boolean isPaused() { return paused; }
     public boolean isPlaying() { return playing; }
     public int getCurrentSongIndex() { return currentSongIndex; }
+    public Song getCurrentSong() { return currentSong; }
     public int getVolumePercent() { return volumePercent; }
     public int getDuration() { return (int) (durationUs / 1000000); }
     public long getPositionMs() { return positionUs / 1000; }

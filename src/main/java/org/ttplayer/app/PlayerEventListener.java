@@ -37,6 +37,9 @@ public class PlayerEventListener {
                 hub.getPlayer().setSongInfo(info);
                 hub.getPlayer().setStatusInfo(org.ttplayer.util.Messages.get("status.playing"));
 
+                // 播放列表自动选中当前播放的歌曲
+                if (hub.getPlaylist() != null) hub.getPlaylist().syncPlayingHighlight();
+
                 hub.tray.updateToolTip(info);
 
                 hub.getLyric().loadLyrics(song);

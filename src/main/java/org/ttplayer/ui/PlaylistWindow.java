@@ -109,6 +109,30 @@ public class PlaylistWindow extends SkinWindow {
 
     public void setPlayerEngine(PlayerEngine engine) {
         this.playerEngine = engine;
+        syncPlayingHighlight();
+    }
+
+    /** 自动选中当前正在播放的歌曲（若在当前播放列表里则高亮并滚动到可见） */
+    public void syncPlayingHighlight() {
+        if (playerEngine == null || playlistManager == null || listRight == null) return;
+        Playlist current = playlistManager.getCurrentPlaylist();
+        if (current == null) return;
+        Song playing = playerEngine.getCurrentSong();
+        if (playing == null) return;
+        // 优先对象引用匹配；播放对象可能来自其它路径（非列表内引用），按文件路径兜底
+        int idx = current.songs.indexOf(playing);
+        if (idx < 0 && playing.filePath != null) {
+            for (int i = 0; i < current.songs.size(); i++) {
+                Song s = current.songs.get(i);
+                if (s.filePath != null && s.filePath.equals(playing.filePath)) {
+                    idx = i;
+                    break;
+                }
+            }
+        }
+        if (idx >= 0) {
+            listRight.setSelectedIndex(idx);
+        }
     }
 
     public void setLyricWindow(LyricWindow lw) {
@@ -1243,6 +1267,9 @@ public class PlaylistWindow extends SkinWindow {
                 }
             }
         }
+
+        // 列表刷新后保持当前播放歌曲被选中
+        syncPlayingHighlight();
     }
 
     private static class TransparentJList<E> extends JList<E> {
