@@ -208,23 +208,23 @@ jobs:
 
           # ===== Installers / 安装包：Windows .msi + .exe；macOS .dmg；Linux .deb =====
           if [[ "$PLATFORM" == windows-* ]]; then
-            jpackage --type msi --name TTPlayer --app-version 1.0.0 \
+            jpackage --type msi --name TTPlayer --app-version 1.0.1 \
               --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
               --main-class org.ttplayer.Main --icon "$ICON" \
               --add-modules "$MODULES" \
               --win-menu --win-shortcut --dest pkg_out
-            jpackage --type exe --name TTPlayer --app-version 1.0.0 \
+            jpackage --type exe --name TTPlayer --app-version 1.0.1 \
               --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
               --main-class org.ttplayer.Main --icon "$ICON" \
               --add-modules "$MODULES" \
               --win-menu --win-shortcut --dest pkg_out
           elif [[ "$PLATFORM" == macosx-* ]]; then
-            jpackage --type dmg --name TTPlayer --app-version 1.0.0 \
+            jpackage --type dmg --name TTPlayer --app-version 1.0.1 \
               --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
               --main-class org.ttplayer.Main --icon "$ICON" \
               --add-modules "$MODULES" --dest pkg_out
           else
-            jpackage --type deb --name ttplayer --app-version 1.0.0 \
+            jpackage --type deb --name ttplayer --app-version 1.0.1 \
               --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
               --main-class org.ttplayer.Main --icon "$ICON" \
               --add-modules "$MODULES" --dest pkg_out
@@ -233,7 +233,7 @@ jobs:
           # ===== Portable app bundles / 免安装 app 包（--type app-image，无需 WiX/fakeroot）=====
           # macOS → TTPlayer.app; Windows/Linux → TTPlayer/ green directory
           # macOS 产出 TTPlayer.app；Windows/Linux 产出 TTPlayer/ 绿色目录
-          jpackage --type app-image --name TTPlayer --app-version 1.0.0 \
+          jpackage --type app-image --name TTPlayer --app-version 1.0.1 \
             --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
             --main-class org.ttplayer.Main --icon "$ICON" \
             --add-modules "$MODULES" --dest app_out
