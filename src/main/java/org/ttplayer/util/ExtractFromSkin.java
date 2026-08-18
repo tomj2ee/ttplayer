@@ -1,5 +1,8 @@
 package org.ttplayer.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.*;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -9,6 +12,7 @@ import java.util.zip.ZipInputStream;
 import java.util.zip.ZipFile;
 
 public class ExtractFromSkin {
+    private static final Logger log = LoggerFactory.getLogger(ExtractFromSkin.class);
 
     public static void main(String[] args) {
         try {
@@ -18,7 +22,7 @@ public class ExtractFromSkin {
 
             extractIconFromSkin(skinPath, outputDir);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Skin icon extraction failed", e);
         }
     }
 
@@ -41,14 +45,14 @@ public class ExtractFromSkin {
                 String name = entry.getName().toLowerCase();
 
                 if (name.endsWith(".ico") || name.endsWith(".bmp")) {
-                    System.out.println("Found: " + entry.getName());
+                    log.info("Found: {}", entry.getName());
 
                     String outName = name.contains("ico") ? "TTPlayer.ico" : "icon.bmp";
                     if (name.contains("player") || name.contains("main") || name.contains("icon")) {
                         InputStream is = zipFile.getInputStream(entry);
                         byte[] data = readAllBytes(is);
                         Files.write(Paths.get(outputDir, outName), data);
-                        System.out.println("Extracted to: " + outName);
+                        log.info("Extracted to: {}", outName);
                         foundIcon = true;
                         break;
                     }
@@ -56,7 +60,7 @@ public class ExtractFromSkin {
             }
 
             if (!foundIcon) {
-                System.out.println("No icon found, extracting all BMP files...");
+                log.info("No icon found, extracting all BMP files...");
                 entries = zipFile.entries();
                 while (entries.hasMoreElements()) {
                     ZipEntry entry = entries.nextElement();
@@ -64,15 +68,15 @@ public class ExtractFromSkin {
                         InputStream is = zipFile.getInputStream(entry);
                         byte[] data = readAllBytes(is);
                         Files.write(Paths.get(outputDir, entry.getName()), data);
-                        System.out.println("Extracted: " + entry.getName());
+                        log.info("Extracted: {}", entry.getName());
                     }
                 }
             }
 
             zipFile.close();
-            System.out.println("Done!");
+            log.info("Done!");
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Skin extraction failed", e);
         }
     }
 

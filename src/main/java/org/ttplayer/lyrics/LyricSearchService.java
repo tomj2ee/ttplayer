@@ -6,6 +6,8 @@ import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -15,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 
 public class LyricSearchService {
+    private static final Logger log = LoggerFactory.getLogger(LyricSearchService.class);
 
     private static final String BASE_URL = "https://music.gd.cn";
     private static final String SEARCH_API = BASE_URL + "/api/lyrics/search";
@@ -42,11 +45,10 @@ public class LyricSearchService {
             .addQueryParameter("pageSize", String.valueOf(pageSize))
             .build();
 
-        System.out.println("[LyricSearchService] searchSong keyword=" + keyword
-            + " pageSize=" + pageSize + " url=" + url);
+        log.debug("[LyricSearchService] searchSong keyword={} pageSize={} url={}", keyword, pageSize, url);
 
         String json = httpGet(url.toString());
-        System.out.println("[LyricSearchService] searchSong response=" + truncate(json, 500));
+        log.debug("[LyricSearchService] searchSong response={}", truncate(json, 500));
         return parseSearchResults(json);
     }
 
@@ -58,10 +60,10 @@ public class LyricSearchService {
             .addQueryParameter("mid", mid)
             .build();
 
-        System.out.println("[LyricSearchService] getLyricByMid mid=" + mid + " url=" + url);
+        log.debug("[LyricSearchService] getLyricByMid mid={} url={}", mid, url);
 
         String json = httpGet(url.toString());
-        System.out.println("[LyricSearchService] getLyricByMid response=" + truncate(json, 500));
+        log.debug("[LyricSearchService] getLyricByMid response={}", truncate(json, 500));
         return parseLyricResponse(json);
     }
 

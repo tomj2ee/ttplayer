@@ -1,5 +1,7 @@
 package org.ttplayer.app;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.ttplayer.engine.PlayerEngine;
 import org.ttplayer.model.PlaylistConfig;
 import org.ttplayer.model.Song;
@@ -13,6 +15,7 @@ import javax.swing.*;
  * 并负责自动搜索下载歌词。
  */
 public class PlayerEventListener {
+    private static final Logger log = LoggerFactory.getLogger(PlayerEventListener.class);
 
     private final WindowHub hub;
     private Timer playbackSaveTimer;
@@ -94,7 +97,7 @@ public class PlayerEventListener {
 
             @Override
             public void onPlaybackError(String error) {
-                System.err.println(org.ttplayer.util.Messages.get("player.errorPrefix") + error);
+                log.error("{} {}", org.ttplayer.util.Messages.get("player.errorPrefix"), error);
                 hub.tray.updateToolTip(org.ttplayer.util.Messages.get("player.errorPrefix") + error);
             }
         });

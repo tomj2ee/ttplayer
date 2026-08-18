@@ -74,6 +74,18 @@
             <artifactId>jackson-databind</artifactId>
             <version>2.13.5</version>
         </dependency>
+
+        <!-- 日志：slf4j API + JDK 自带 java.util.logging 后端（JUL，默认输出到控制台） -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.36</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-jdk14</artifactId>
+            <version>1.7.25</version>
+        </dependency>
     </dependencies>
 
     <build>

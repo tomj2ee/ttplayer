@@ -1,5 +1,7 @@
 package org.ttplayer.lyrics;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.ttplayer.model.Song;
 import org.ttplayer.util.SongUtils;
 
@@ -14,6 +16,7 @@ import java.util.function.Consumer;
  * 播放启动时若歌曲目录没有 .lrc，则在后台搜索并保存到歌曲同目录。
  */
 public class LyricAutoDownloader {
+    private static final Logger log = LoggerFactory.getLogger(LyricAutoDownloader.class);
 
     private LyricAutoDownloader() {}
 
@@ -50,7 +53,7 @@ public class LyricAutoDownloader {
                     }
                     return true;
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    log.error("Failed to search/download lyrics for {}", song.filePath, e);
                     return false;
                 }
             }

@@ -201,25 +201,33 @@ jobs:
           ICON: ${{ env.ICON }}
         run: |
           mkdir -p pkg_out app_out
+          # jlink 精简运行时须显式带上扩展字符集模块（GBK/EUC-KR/Big5... 在 jdk.charsets，
+          # 若缺，运行时 Charset.forName("GBK") 会抛 UnsupportedCharsetException → 中文歌词乱码）
+          # / keep extended charsets (GBK/EUC-KR/Big5) in the bundled runtime; they live in jdk.charsets.
+          MODULES="java.se,jdk.charsets"
 
           # ===== Installers / 安装包：Windows .msi + .exe；macOS .dmg；Linux .deb =====
           if [[ "$PLATFORM" == windows-* ]]; then
             jpackage --type msi --name TTPlayer --app-version 1.0.0 \
               --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
               --main-class org.ttplayer.Main --icon "$ICON" \
+              --add-modules "$MODULES" \
               --win-menu --win-shortcut --dest pkg_out
             jpackage --type exe --name TTPlayer --app-version 1.0.0 \
               --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
               --main-class org.ttplayer.Main --icon "$ICON" \
+              --add-modules "$MODULES" \
               --win-menu --win-shortcut --dest pkg_out
           elif [[ "$PLATFORM" == macosx-* ]]; then
             jpackage --type dmg --name TTPlayer --app-version 1.0.0 \
               --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
-              --main-class org.ttplayer.Main --icon "$ICON" --dest pkg_out
+              --main-class org.ttplayer.Main --icon "$ICON" \
+              --add-modules "$MODULES" --dest pkg_out
           else
             jpackage --type deb --name ttplayer --app-version 1.0.0 \
               --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
-              --main-class org.ttplayer.Main --icon "$ICON" --dest pkg_out
+              --main-class org.ttplayer.Main --icon "$ICON" \
+              --add-modules "$MODULES" --dest pkg_out
           fi
 
           # ===== Portable app bundles / 免安装 app 包（--type app-image，无需 WiX/fakeroot）=====
@@ -227,7 +235,8 @@ jobs:
           # macOS 产出 TTPlayer.app；Windows/Linux 产出 TTPlayer/ 绿色目录
           jpackage --type app-image --name TTPlayer --app-version 1.0.0 \
             --input input --main-jar "ttplayer-1.0.0-${PLATFORM}.jar" \
-            --main-class org.ttplayer.Main --icon "$ICON" --dest app_out
+            --main-class org.ttplayer.Main --icon "$ICON" \
+            --add-modules "$MODULES" --dest app_out
 
           # Archive the app dir next to the installers / 压缩 app 目录到 pkg_out，与安装包一并上传
           if [[ "$PLATFORM" == macosx-* ]]; then

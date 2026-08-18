@@ -1,5 +1,7 @@
 package org.ttplayer.ui;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.ttplayer.util.Messages;
 import org.ttplayer.util.SkinLoader;
 
@@ -22,6 +24,7 @@ import java.util.zip.ZipInputStream;
  * 仅操作按钮使用 Ant Design 风格（AntButton）
  */
 public class SkinSelectDialog extends JDialog {
+    private static final Logger log = LoggerFactory.getLogger(SkinSelectDialog.class);
 
     // ============ Ant Design 配色（按钮用） ============
     private static final Color PRIMARY        = new Color(22, 119, 255);
@@ -267,7 +270,7 @@ public class SkinSelectDialog extends JDialog {
             try {
                 previewImg = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(entry.previewData));
             } catch (Exception e) {
-                e.printStackTrace();
+                log.warn("Failed to load skin preview image", e);
             }
         }
         previewPanel.repaint();

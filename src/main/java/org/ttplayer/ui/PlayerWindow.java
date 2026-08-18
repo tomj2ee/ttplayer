@@ -7,6 +7,8 @@ import org.ttplayer.controls.TtTrackBar;
 import org.ttplayer.controls.TtVolumeBar;
 import org.ttplayer.engine.PlayerEngine;
 import org.ttplayer.skin.TtSkin;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.*;
 import java.awt.*;
@@ -16,6 +18,7 @@ import java.awt.image.BufferedImage;
 import org.ttplayer.util.Messages;
 
 public class PlayerWindow extends SkinWindow {
+    private static final Logger log = LoggerFactory.getLogger(PlayerWindow.class);
 
     public TtButton btnPlay, btnPause, btnStop, btnPrev, btnNext, btnMute;
     public TtButton btnOpen, btnLyric, btnEqualizer, btnPlaylist, btnBrowser;
@@ -365,12 +368,8 @@ public class PlayerWindow extends SkinWindow {
     }
 
     private void createIcon(TtSkin.Ctl ctl) {
-       // System.out.println("创建图标标签...");
         iconLabel = new JLabel();
         iconLabel.setBounds(ctl.left, ctl.top, ctl.right - ctl.left, ctl.bottom - ctl.top);
-
-        // 设置一个边框方便调试
-       // iconLabel.setBorder(BorderFactory.createLineBorder(Color.RED, 1));
 
         if (ctl.image != null && !ctl.image.isEmpty()) {
 
@@ -385,7 +384,7 @@ public class PlayerWindow extends SkinWindow {
                     java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(imageData);
                     BufferedImage img = javax.imageio.ImageIO.read(bais);
                     if (img != null) {
-                        System.out.println(org.ttplayer.util.Messages.get("debug.loadImageSize") + img.getWidth() + "x" + img.getHeight());
+                        log.debug(org.ttplayer.util.Messages.get("debug.loadImageSize") + "{}x{}", img.getWidth(), img.getHeight());
                         int w = ctl.right - ctl.left;
                         int h = ctl.bottom - ctl.top;
                         Image scaled = img.getScaledInstance(w, h, Image.SCALE_SMOOTH);
@@ -394,7 +393,7 @@ public class PlayerWindow extends SkinWindow {
 
                     // 如果没成功，尝试特殊方法
                     if (icon == null) {
-                        System.out.println(org.ttplayer.util.Messages.get("debug.imageioFail"));
+                        log.debug(org.ttplayer.util.Messages.get("debug.imageioFail"));
                         if (lowerImage.endsWith(".ico")) {
                             icon = loadIco(imageData);
                         } else {
@@ -409,23 +408,22 @@ public class PlayerWindow extends SkinWindow {
                     }
 
                     if (icon != null) {
-                        System.out.println(org.ttplayer.util.Messages.get("debug.iconLoaded"));
+                        log.debug(org.ttplayer.util.Messages.get("debug.iconLoaded"));
                         iconLabel.setIcon(icon);
                     } else {
-                        System.err.println("Failed to load icon, trying fallback");
+                        log.warn("Failed to load icon, trying fallback");
                         tryLoadFallbackIcon(ctl);
                     }
                 } catch (Exception e) {
-                    System.err.println("Error loading icon: " + e.getMessage());
-                    e.printStackTrace();
+                    log.error("Error loading icon: {}", e.getMessage(), e);
                     tryLoadFallbackIcon(ctl);
                 }
             } else {
-                System.err.println("Could not find icon file: " + ctl.image);
+                log.warn("Could not find icon file: {}", ctl.image);
                 tryLoadFallbackIcon(ctl);
             }
         } else {
-            System.err.println("No icon image configured");
+            log.warn("No icon image configured");
             tryLoadFallbackIcon(ctl);
         }
 
@@ -447,7 +445,7 @@ public class PlayerWindow extends SkinWindow {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Could not load fallback PNG icon: " + e.getMessage());
+            log.error("Could not load fallback PNG icon: {}", e.getMessage(), e);
         }
     }
 
@@ -483,8 +481,7 @@ public class PlayerWindow extends SkinWindow {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Error loading ICO file: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Error loading ICO file: {}", e.getMessage(), e);
         }
         return null;
     }

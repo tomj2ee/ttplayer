@@ -1,5 +1,7 @@
 package org.ttplayer.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.ttplayer.engine.PlayerEngine;
 import org.ttplayer.ui.PlayerWindow;
 
@@ -11,6 +13,7 @@ import java.awt.image.BufferedImage;
 import java.io.InputStream;
 
 public class PlayerTray {
+    private static final Logger log = LoggerFactory.getLogger(PlayerTray.class);
     private TrayIcon trayIcon;
     private SystemTray tray;
     private PlayerWindow playerWindow;
@@ -47,7 +50,7 @@ public class PlayerTray {
     private void initTray() {
         // 检查系统是否支持托盘
         if (!SystemTray.isSupported()) {
-            System.out.println(org.ttplayer.util.Messages.get("tray.notSupported"));
+            log.warn(org.ttplayer.util.Messages.get("tray.notSupported"));
             return;
         }
 
@@ -95,7 +98,7 @@ public class PlayerTray {
             try {
                 tray.add(trayIcon);
             } catch (AWTException e) {
-                System.out.println(org.ttplayer.util.Messages.get("tray.addFailPrefix") + e.getMessage());
+                log.error(org.ttplayer.util.Messages.get("tray.addFailPrefix") + e.getMessage(), e);
             }
         }
     }
@@ -148,7 +151,7 @@ public class PlayerTray {
                 return javax.imageio.ImageIO.read(is);
             }
         } catch (Exception e) {
-            System.out.println(org.ttplayer.util.Messages.get("tray.iconLoadFail"));
+            log.error(org.ttplayer.util.Messages.get("tray.iconLoadFail"), e);
         }
         return createDefaultTrayIcon();
     }
@@ -317,7 +320,7 @@ public class PlayerTray {
                 try {
                     tray.add(trayIcon);
                 } catch (AWTException e) {
-                    System.out.println(org.ttplayer.util.Messages.get("tray.retryFailPrefix") + e.getMessage());
+                    log.error(org.ttplayer.util.Messages.get("tray.retryFailPrefix") + e.getMessage(), e);
                 }
             }
         }

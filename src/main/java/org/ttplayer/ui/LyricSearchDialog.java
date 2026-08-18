@@ -1,5 +1,7 @@
 package org.ttplayer.ui;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.ttplayer.model.Song;
 import org.ttplayer.lyrics.LyricSearchService;
 import org.ttplayer.lyrics.SongResult;
@@ -25,6 +27,7 @@ import org.ttplayer.util.Messages;
  * 主色 #1677ff / 白色卡片 / 圆角控件 / 浅灰页面背景
  */
 public class LyricSearchDialog extends JDialog {
+    private static final Logger log = LoggerFactory.getLogger(LyricSearchDialog.class);
 
     // ============ Ant Design 配色 ============
     private static final Color PRIMARY        = new Color(22, 119, 255);      // #1677ff
@@ -336,7 +339,7 @@ public class LyricSearchDialog extends JDialog {
                         resultTable.setRowSelectionInterval(0, 0);
                     }
                 } catch (Exception ex) {
-                    ex.printStackTrace();
+                    log.error("Lyric search failed: {}", ex.getMessage(), ex);
                     JOptionPane.showMessageDialog(LyricSearchDialog.this,
                         Messages.get("lyricSearch.searchFailPrefix") + ex.getMessage(), Messages.get("dialog.error"), JOptionPane.ERROR_MESSAGE);
                 }

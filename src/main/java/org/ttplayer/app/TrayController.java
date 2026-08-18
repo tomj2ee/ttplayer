@@ -1,5 +1,7 @@
 package org.ttplayer.app;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.ttplayer.util.Messages;
 import org.ttplayer.util.PlayerTray;
 
@@ -7,6 +9,7 @@ import org.ttplayer.util.PlayerTray;
  * 系统托盘控制器（从 TTPlayerApplication 拆分）。
  */
 public class TrayController {
+    private static final Logger log = LoggerFactory.getLogger(TrayController.class);
 
     private final WindowHub hub;
     private PlayerTray playerTray;
@@ -30,7 +33,7 @@ public class TrayController {
             playerTray.setOnShowMainWindow(hub::showAllWindowsFromTray);
             playerTray.setOnLanguageChanged(locale -> hub.reloadForLanguage());
         } catch (Exception e) {
-            System.out.println(Messages.get("tray.initFailPrefix") + e.getMessage());
+            log.error(Messages.get("tray.initFailPrefix") + e.getMessage(), e);
         }
     }
 

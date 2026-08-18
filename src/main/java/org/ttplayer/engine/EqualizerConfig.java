@@ -1,5 +1,8 @@
 package org.ttplayer.engine;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.*;
 import java.nio.file.*;
 import java.util.Properties;
@@ -9,6 +12,7 @@ import java.util.Properties;
  * 覆盖：启用、杜比环绕、preamp、10 段增益、平衡/环绕滑块、当前类别。
  */
 public class EqualizerConfig {
+    private static final Logger log = LoggerFactory.getLogger(EqualizerConfig.class);
 
     private static final Path CONFIG_PATH = Paths.get(System.getProperty("user.home"), ".ttplayer", "equalizer.properties");
 
@@ -43,7 +47,7 @@ public class EqualizerConfig {
             try (InputStream in = Files.newInputStream(CONFIG_PATH)) {
                 props.load(in);
             } catch (IOException e) {
-                e.printStackTrace();
+                log.warn("Failed to load equalizer config", e);
             }
         }
         st.enabled = Boolean.parseBoolean(props.getProperty("enabled", "false"));
@@ -75,7 +79,7 @@ public class EqualizerConfig {
                 props.store(out, "Equalizer config");
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            log.warn("Failed to save equalizer config", e);
         }
     }
 }

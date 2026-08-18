@@ -1,5 +1,7 @@
 package org.ttplayer.model;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
@@ -22,6 +24,7 @@ import org.ttplayer.util.Messages;
  * 保存/加载播放列表及歌曲配置到 XML 文件
  */
 public class PlaylistConfig {
+    private static final Logger log = LoggerFactory.getLogger(PlaylistConfig.class);
 
     private static final String CONFIG_DIR = System.getProperty("user.home") + "/.ttplayer";
     private static final String FILE_NAME = "playlists.xml";
@@ -70,7 +73,7 @@ public class PlaylistConfig {
             }
 
         } catch (Exception e) {
-            System.err.println(org.ttplayer.util.Messages.get("config.saveFailPrefix") + e.getMessage());
+            log.error("{} {}", org.ttplayer.util.Messages.get("config.saveFailPrefix"), e.getMessage(), e);
         }
     }
 
@@ -143,7 +146,7 @@ public class PlaylistConfig {
             }
 
         } catch (Exception e) {
-            System.err.println(org.ttplayer.util.Messages.get("config.loadFailPrefix") + e.getMessage());
+            log.error("{} {}", org.ttplayer.util.Messages.get("config.loadFailPrefix"), e.getMessage(), e);
             if (manager.getAllPlaylists().isEmpty()) {
                 manager.addPlaylist(new Playlist(org.ttplayer.util.Messages.get("playlist.defaultName")));
             }

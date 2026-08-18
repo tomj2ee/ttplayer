@@ -1,5 +1,8 @@
 package org.ttplayer.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.swing.*;
 import java.awt.*;
 import java.io.*;
@@ -7,6 +10,7 @@ import java.nio.file.*;
 import java.util.Properties;
 
 public class WindowConfig {
+    private static final Logger log = LoggerFactory.getLogger(WindowConfig.class);
 
     private static final Path CONFIG_PATH = Paths.get(System.getProperty("user.home"), ".ttplayer", "windows.properties");
 
@@ -129,7 +133,7 @@ public class WindowConfig {
             try (InputStream in = Files.newInputStream(CONFIG_PATH)) {
                 props.load(in);
             } catch (IOException e) {
-                e.printStackTrace();
+                log.warn("Failed to load window config", e);
             }
         }
         return props;
@@ -142,7 +146,7 @@ public class WindowConfig {
                 props.store(out, "UI-Snap window config");
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            log.warn("Failed to save window config", e);
         }
     }
 }

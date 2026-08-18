@@ -1,5 +1,7 @@
 package org.ttplayer.skin;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.w3c.dom.*;
 import javax.xml.parsers.*;
 import java.awt.*;
@@ -11,6 +13,7 @@ import java.util.List;
 import java.util.zip.*;
 
 public class TtSkin {
+    private static final Logger log = LoggerFactory.getLogger(TtSkin.class);
 
     /** 窗口中一个控件的定义 */
     public static class Ctl {
@@ -179,7 +182,7 @@ public class TtSkin {
                 }
             }
         } catch (Exception e) {
-            System.err.println("Could not load resource: " + path);
+            log.warn("Could not load resource: {}", path);
         }
         return null;
     }
@@ -331,7 +334,7 @@ public class TtSkin {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Failed to parse skin XML", e);
         }
     }
 

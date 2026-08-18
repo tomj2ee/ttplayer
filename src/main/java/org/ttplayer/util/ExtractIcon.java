@@ -1,9 +1,13 @@
 package org.ttplayer.util;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.*;
 import java.nio.file.*;
 
 public class ExtractIcon {
+    private static final Logger log = LoggerFactory.getLogger(ExtractIcon.class);
 
     public static void main(String[] args) {
         try {
@@ -11,9 +15,9 @@ public class ExtractIcon {
             String outputPath = "src/main/resources/skin/default/TTPlayer.ico";
 
             extractFirstIcon(exePath, outputPath);
-            System.out.println("Icon extracted successfully to: " + outputPath);
+            log.info("Icon extracted successfully to: {}", outputPath);
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Icon extraction failed", e);
         }
     }
 
@@ -22,18 +26,18 @@ public class ExtractIcon {
 
         int icoOffset = findIconOffset(exeData);
         if (icoOffset < 0) {
-            System.out.println("No icon found, copying from exe resource...");
+            log.info("No icon found, copying from exe resource...");
             extractIconFromResources(exeData, outputPath);
             return;
         }
 
-        System.out.println("Found icon at offset: " + icoOffset);
+        log.info("Found icon at offset: {}", icoOffset);
         byte[] icoData = extractIconData(exeData, icoOffset);
 
         if (icoData != null) {
             Files.write(Paths.get(outputPath), icoData);
         } else {
-            System.out.println("Failed to extract icon, trying alternative method...");
+            log.info("Failed to extract icon, trying alternative method...");
             extractIconFromResources(exeData, outputPath);
         }
     }
@@ -86,7 +90,7 @@ public class ExtractIcon {
 
             return icoFile;
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("Failed to extract icon data", e);
             return null;
         }
     }
@@ -98,13 +102,13 @@ public class ExtractIcon {
                 byte[] icoData = tryCreateIco(exeData, off);
                 if (icoData != null && icoData.length > 100) {
                     Files.write(Paths.get(outputPath), icoData);
-                    System.out.println("Created icon file using offset: " + off);
+                    log.info("Created icon file using offset: {}", off);
                     return;
                 }
             } catch (Exception ignored) {}
         }
 
-        System.out.println("Creating placeholder BMP as icon...");
+        log.info("Creating placeholder BMP as icon...");
         createPlaceholderIcon(outputPath);
     }
 
