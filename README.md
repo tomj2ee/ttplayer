@@ -28,6 +28,12 @@
 
 ---
 
+## 联系我们 / Contact
+
+![联系我们 / Contact](screenshots/me.png)
+
+---
+
 # 中文
 
 一款用 Java Swing 编写的桌面音乐播放器，致敬经典 **千千静听 (TTPlayer)**。支持本地音频播放、同步歌词、多皮肤切换、均衡器、频谱可视化等功能。界面支持**中文 / English / 日本語 / 한국어 / Deutsch 切换**。
