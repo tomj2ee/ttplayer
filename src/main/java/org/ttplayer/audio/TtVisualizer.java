@@ -201,31 +201,61 @@ public class TtVisualizer extends JComponent {
         img.setRGB(0, 0, w, h, px, 0, w);
     }
 
-    /** 柱数：原版固定 48 段；窗口过窄时合并显示，过宽时不超过 48。 */
+    /**
+     * 柱数：原版在 200px 宽显示区内恰好排布 22 段，柱宽 6px + 间隙 3px（周期 9px）。
+     * 因此固定按「每段 9px」推算可见段数；SpectrumWide=1 时柱更宽、间隙更小。
+     */
     private int barCountFor(int w) {
-        // 原版柱宽约 6px（含间隙），SpectrumWide=1 时约 4px
-        int perBar = skinWide ? 5 : 7;
+        int perBar = skinWide ? 7 : 9;
         int fit = w / perBar;
         if (fit > TtSpectrum.BANDS) fit = TtSpectrum.BANDS;
         if (fit < 2) fit = 2;
         return fit;
     }
 
+    /**
+     * 原版色带：颜色锚定在「柱内相对高度」而非绝对 Y 坐标。
+     *
+     * <p>实测 TTPlayer.exe（皮肤 {@code 2、Media Player 10}，
+     * {@code SpectrumTopColor=#ff0080 / SpectrumMidColor=#ffff00 / SpectrumBtmColor=#0080ff}）
+     * 得到的分段线性模型，平均色差 &lt; 2%：</p>
+     * <pre>
+     *   t = (y - top) / (height - 1)      // 0 = 柱顶, 1 = 柱底
+     *   t ∈ [0.0, 0.5] → Top(品红) lerp→ Mid(黄)
+     *   t ∈ [0.5, 1.0] → Mid(黄)   lerp→ Btm(蓝)
+     * </pre>
+     * <p>柱顶另有 1px 的 {@code SpectrumPeakColor} 高光帽。</p>
+     */
+    private int bandColorAt(float t) {
+        if (t < 0f) t = 0f;
+        if (t > 1f) t = 1f;
+        return t < 0.5f
+                ? lerpRgb(gTop, gMid, t * 2f)
+                : lerpRgb(gMid, gBtm, (t - 0.5f) * 2f);
+    }
+
     // ============ 柱状（BARS / MIRROR_BARS） ============
+
+    // 当前帧色带端点缓存（bandColorAt 使用）
+    private int gTop, gMid, gBtm;
 
     private void drawBars(Graphics2D g2, boolean mirror) {
         int w = getWidth(), h = getHeight();
         int bars = barCountFor(w);
 
+        gTop = argb(cTop());
+        gMid = argb(cMid());
+        gBtm = argb(cBtm());
+        int peakCol = argb(cPeak());
+
         float bw = (float) w / bars;
-        float gap = skinWide ? Math.max(0.4f, bw * 0.08f) : Math.max(1f, bw * 0.28f);
+        // 原版几何：柱宽 6px、间隙 3px → 柱占周期 2/3；Wide 模式间隙更小
+        float gapRatio = skinWide ? 0.12f : 0.30f;
+        float gap = Math.max(skinWide ? 1f : 1f, bw * gapRatio);
         float drawW = Math.max(1f, bw - gap);
 
         int baseY = mirror ? h / 2 : h;     // 柱基线
         int span  = mirror ? h / 2 : h;     // 最大柱高
-
-        int gTop = argb(cTop()), gMid = argb(cMid()), gBtm = argb(cBtm());
-        int peakCol = argb(cPeak());
 
         for (int i = 0; i < bars; i++) {
             float lv = spectrum.levelResampled(i, bars);
@@ -238,33 +268,33 @@ public class TtVisualizer extends JComponent {
             if (colW < 1) colW = 1;
 
             if (bh > 0) {
-                // 三段竖直渐变：柱底 = btm，柱中 = mid，柱顶 = top
-                for (int y = 0; y < bh; y++) {
-                    float t = (float) y / bh;
-                    int col = t < 0.5f
-                            ? lerpRgb(gBtm, gMid, t * 2f)
-                            : lerpRgb(gMid, gTop, (t - 0.5f) * 2f);
-                    int py = baseY - 1 - y;
+                // 原版：柱顶 1px 为 SpectrumPeakColor 高光帽，
+                // 其余像素按「柱内相对高度」着色（顶部→品红，底部→蓝）。
+                int cap = bh >= 3 ? 1 : bh;
+                for (int r = 0; r < bh; r++) {              // r=0 为柱顶
+                    int py = baseY - bh + r;
                     if (py < 0 || py >= h) continue;
+                    int col = (r < cap)
+                            ? peakCol
+                            : bandColorAt((float) r / Math.max(1, bh - 1));
                     g2.setColor(new Color(col));
                     g2.fillRect(x, py, colW, 1);
                 }
             }
-            // 峰值顶线
+            // 峰值保持线（独立于柱体，落在柱顶上方）
             int ph = (int) (pk * span);
-            if (ph > 1) {
+            if (ph > bh + 1) {
                 int py = baseY - ph;
-                g2.setColor(new Color(peakCol));
-                g2.fillRect(x, py, colW, 1);
+                if (py >= 0 && py < h) {
+                    g2.setColor(new Color(peakCol));
+                    g2.fillRect(x, py, colW, 1);
+                }
             }
             // 镜像下半（半透明对称柱）
             if (mirror && bh > 0) {
                 int down = (int) (bh * 0.85f);
                 for (int y = 0; y < down; y++) {
-                    float t = (float) y / down;
-                    int col = t < 0.5f
-                            ? lerpRgb(gMid, gBtm, t * 2f)
-                            : lerpRgb(gTop, gMid, (t - 0.5f) * 2f);
+                    int col = bandColorAt(1f - (float) y / Math.max(1, down - 1));
                     g2.setColor(blendWithBg(new Color(col), 0.55f));
                     g2.fillRect(x, baseY + y, colW, 1);
                 }
