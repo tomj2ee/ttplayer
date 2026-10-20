@@ -496,11 +496,7 @@ public class PlayerWindow extends SkinWindow {
             org.w3c.dom.Element visEl = doc.getDocumentElement();
             org.w3c.dom.Element vis = (org.w3c.dom.Element) visEl.getElementsByTagName("Visual").item(0);
             if (vis == null) return;
-            visualizer.skinColorTop = org.ttplayer.util.UIUtils.getColorAttribute(vis, "SpectrumTopColor", visualizer.skinColorTop);
-            visualizer.skinColorMid = org.ttplayer.util.UIUtils.getColorAttribute(vis, "SpectrumMidColor", visualizer.skinColorMid);
-            visualizer.skinColorBtm = org.ttplayer.util.UIUtils.getColorAttribute(vis, "SpectrumBtmColor", visualizer.skinColorBtm);
-            visualizer.skinColorPeak = org.ttplayer.util.UIUtils.getColorAttribute(vis, "SpectrumPeakColor", visualizer.skinColorPeak);
-            visualizer.skinColorBlur = org.ttplayer.util.UIUtils.getColorAttribute(vis, "BlurScopeColor", visualizer.skinColorBlur);
+            visualizer.applyVisualSkin(vis);
         } catch (Exception ignored) {}
     }
 

@@ -1,31 +1,36 @@
 package org.ttplayer.audio;
 
+import javax.swing.*;
 import java.awt.*;
-import java.awt.geom.Path2D;
 import java.awt.image.BufferedImage;
 import java.util.Arrays;
 
 /**
- * 频谱可视化面板 — 完整移植自 c_ttplayer（player_window_render_viz*.c / mini_window_viz.c）。
+ * TTPlayer 原版频谱显示组件 —— 复现 TTPlayer.exe 的频谱可视化。
  *
- * 8 种频谱类型（对应 C render_visualization 的 mode 0..7）：
- *   BARS      柱状频谱        WAVE       多层波形 + 渐变填充
- *   MIRROR_BARS 镜像柱         PARTICLES  低音喷发 + 中频粒子
- *   LINE      频谱折线        AREA       平滑面积图
- *   RADAR     环形雷达        LED        LED 点阵
+ * <p>显示风格严格对齐原版（由 {@code Visual.xml} 的 {@code <Visual>} 节点驱动）：</p>
+ * <ul>
+ *   <li>{@code SpectrumBtmColor} → 柱底色，{@code SpectrumMidColor} → 柱中色，
+ *       {@code SpectrumTopColor} → 柱顶色（三段竖直渐变）。</li>
+ *   <li>{@code SpectrumPeakColor} → 峰值顶线颜色。</li>
+ *   <li>{@code SpectrumWide} → 宽柱模式（柱间隙极小）。</li>
+ *   <li>{@code Blur} / {@code BlurSpeed} → 帧残影（拖尾）开关与恢复速度。</li>
+ *   <li>{@code BlurScopeColor} → 余晖着色。</li>
+ * </ul>
  *
- * FFT 使用与 FFmpeg AV_TX_FLOAT_RDFT 数学等价的 TtRdft。
+ * <p>数据源为 {@link TtSpectrum}（48 段对数分带 + dB 压缩 + 非对称平滑 + 峰值保持）。</p>
  */
-public class TtVisualizer extends javax.swing.JComponent {
+public class TtVisualizer extends JComponent {
 
+    /** 显示模式。原版主用 BARS；其余模式保留供切换，算法同源。 */
     public enum Mode {
-        BARS, WAVE, MIRROR_BARS, PARTICLES, LINE, AREA, RADAR, LED
+        BARS, MIRROR_BARS, LINE, AREA, LED, WAVE
     }
 
     private Mode mode = Mode.BARS;
-    private TtRdft rdft = new TtRdft();
+    private final TtSpectrum spectrum = new TtSpectrum();
 
-    /** 频谱区域背景：必须不透明，否则会透出窗口下层（白闪/透明） */
+    /** 频谱区域背景：必须不透明，否则会透出窗口下层（白闪/透明）。 */
     public Color backgroundColor = new Color(16, 22, 30);
 
     public Color skinColorTop;
@@ -34,49 +39,51 @@ public class TtVisualizer extends javax.swing.JComponent {
     public Color skinColorPeak;
     public Color skinColorBlur;
 
+    /** SpectrumWide=1：宽柱模式。 */
+    public boolean skinWide = false;
+
+    /** Blur=1：启用帧残影拖尾。 */
+    public boolean skinBlur = true;
+
+    /** BlurSpeed=1..10：残影恢复速度，越大拖尾越短。 */
+    public int skinBlurSpeed = 3;
+
+    // 最近一帧 PCM 样本（WAVE 模式用）
+    private float[] pcmSamples = new float[0];
+    private int pcmCount = 0;
+
+    private BufferedImage backBuffer;
+    private boolean bufferPrimed = false;
+
     public TtVisualizer() {
         setOpaque(true);
     }
 
-    // 当前 FFT 幅度谱（前 FFT_N/2 个 bin）
-    private float[] spectrumBins = new float[TtRdft.FFT_N / 2];
-    private boolean hasSpectrum = false;
-
-    // 最近一帧 PCM 样本（供 WAVE / PARTICLES 使用）
-    private float[] pcmSamples = new float[0];
-    private int pcmCount = 0;
-
-    // C g_smooth_level[128]：柱/折线/面积/雷达共用
-    private final float[] smoothLevels = new float[128];
-
     // ============ 皮肤配色 ============
 
-    private Color getSkinTop()  { return skinColorTop  != null ? skinColorTop  : new Color(120, 255, 120); }
-    private Color getSkinMid()  { return skinColorMid  != null ? skinColorMid  : new Color(255, 255, 80);  }
-    private Color getSkinBtm()  { return skinColorBtm  != null ? skinColorBtm  : new Color(80, 120, 255);  }
-    private Color getSkinPeak() { return skinColorPeak != null ? skinColorPeak : Color.WHITE; }
-    private Color getSkinBlur() { return skinColorBlur != null ? skinColorBlur : new Color(80, 120, 255); }
+    private Color cTop()  { return skinColorTop  != null ? skinColorTop  : new Color(18, 114, 175); }
+    private Color cMid()  { return skinColorMid  != null ? skinColorMid  : new Color(40, 143, 189); }
+    private Color cBtm()  { return skinColorBtm  != null ? skinColorBtm  : new Color(16, 215, 255); }
+    private Color cPeak() { return skinColorPeak != null ? skinColorPeak : Color.WHITE; }
+    private Color cBlur() { return skinColorBlur != null ? skinColorBlur : cBtm(); }
 
     // ============ 公共接口 ============
 
-    public void setMode(Mode mode) { this.mode = mode; repaint(); }
+    public void setMode(Mode mode) { this.mode = mode; bufferPrimed = false; repaint(); }
     public Mode getMode() { return mode; }
 
     public void cycleMode() {
-        Mode[] modes = Mode.values();
-        mode = modes[(mode.ordinal() + 1) % modes.length];
+        Mode[] ms = Mode.values();
+        mode = ms[(mode.ordinal() + 1) % ms.length];
+        bufferPrimed = false;
         repaint();
     }
 
-    /**
-     * 喂入 PCM 数据（s16le 小端），计算幅度谱并缓存波形样本。
-     */
+    /** 由 PlayerWindow 高频喂入 PCM（s16le 小端，单声道左右平均）。 */
     public void updateData(byte[] pcmData) {
-        if (pcmData != null && pcmData.length > 8) {
-            spectrumBins = rdft.spectrum(pcmData, pcmData.length);
-            hasSpectrum = true;
-
-            int n = pcmData.length / 2;
+        if (pcmData != null && pcmData.length >= 8) {
+            spectrum.analyze(pcmData, pcmData.length);
+            int n = pcmData.length / 2;           // 单声道：每采样 2 字节
             if (pcmSamples.length < n) pcmSamples = new float[n];
             for (int i = 0; i < n; i++) {
                 int off = i * 2;
@@ -85,88 +92,49 @@ public class TtVisualizer extends javax.swing.JComponent {
             }
             pcmCount = n;
         } else {
-            hasSpectrum = false;
-            Arrays.fill(spectrumBins, 0f);
-            pcmSamples = new float[0];
+            // 无新数据（暂停/静音）：让柱体自然下落，而不是瞬间清零
+            spectrum.analyze(null, 0);
             pcmCount = 0;
         }
         repaint();
     }
 
-    // ============ 频谱数学 ============
-
-    /** C spectrum_level：bin 幅度均值 → ×100 → log1p/log1p(100) 压缩 */
-    private float spectrumLevel(int binStart, int binEnd) {
-        float mag = 0;
-        int count = 0;
-        int half = TtRdft.FFT_N / 2;
-        // 跳过 DC bin(0)：直流偏置会把第一根柱顶高，制造"左边高"假象
-        int start = Math.max(1, binStart);
-        for (int b = start; b < binEnd && b < half; b++) {
-            mag += spectrumBins[b];
-            count++;
-        }
-        if (count > 0) mag /= (float) count;
-        float level = 0;
-        if (mag > 0) {
-            float scaled = mag * 100.0f;
-            level = (float) (Math.log1p(scaled) / Math.log1p(100.0));
-        }
-        if (level > 1.0f) level = 1.0f;
-        if (level < 0.02f) level = 0.0f;
-        return level;
+    /** 停止播放时调用：清空残影与全部分析状态。 */
+    public void reset() {
+        spectrum.reset();
+        pcmSamples = new float[0];
+        pcmCount = 0;
+        bufferPrimed = false;
+        repaint();
     }
 
-    /** C smooth_level：att 0.5 / decay 0.9 */
-    private float smoothLevel(int idx, float rawLevel) {
-        float prev = smoothLevels[idx];
-        float v = (rawLevel >= prev) ? prev + (rawLevel - prev) * 0.5f : prev * 0.9f;
-        if (v < 0) v = 0;
-        if (v > 1) v = 1;
-        smoothLevels[idx] = v;
-        return v;
+    /**
+     * 从皮肤 {@code <Visual>} 节点读取全部频谱样式，与 TTPlayer.exe 的
+     * Visual.xml 参数一一对应。
+     */
+    public void applyVisualSkin(org.w3c.dom.Element vis) {
+        if (vis == null) return;
+        skinColorTop  = org.ttplayer.util.UIUtils.getColorAttribute(vis, "SpectrumTopColor", skinColorTop);
+        skinColorMid  = org.ttplayer.util.UIUtils.getColorAttribute(vis, "SpectrumMidColor", skinColorMid);
+        skinColorBtm  = org.ttplayer.util.UIUtils.getColorAttribute(vis, "SpectrumBtmColor", skinColorBtm);
+        skinColorPeak = org.ttplayer.util.UIUtils.getColorAttribute(vis, "SpectrumPeakColor", skinColorPeak);
+        skinColorBlur = org.ttplayer.util.UIUtils.getColorAttribute(vis, "BlurScopeColor", skinColorBlur);
+        skinWide = "1".equals(org.ttplayer.util.UIUtils.getAttribute(vis, "SpectrumWide", skinWide ? "1" : "0").trim());
+        skinBlur = "1".equals(org.ttplayer.util.UIUtils.getAttribute(vis, "Blur", skinBlur ? "1" : "0").trim());
+        try {
+            skinBlurSpeed = Integer.parseInt(
+                    org.ttplayer.util.UIUtils.getAttribute(vis, "BlurSpeed", String.valueOf(skinBlurSpeed)).trim());
+        } catch (NumberFormatException ignored) { }
+        bufferPrimed = false;
+        repaint();
     }
 
-    /** C theme_color：在调色板线性插值 */
-    private Color themeColor(int index, int total, Color[] palette) {
-        float t = (total > 1) ? (float) index / (total - 1) : 0f;
-        if (t > 1) t = 1;
-        float pos = t * (palette.length - 1);
-        int lo = (int) pos;
-        int hi = lo + 1;
-        if (hi >= palette.length) hi = palette.length - 1;
-        float k = pos - lo;
-        Color a = palette[lo], b = palette[hi];
-        return new Color(
-            (int) (a.getRed() + (b.getRed() - a.getRed()) * k),
-            (int) (a.getGreen() + (b.getGreen() - a.getGreen()) * k),
-            (int) (a.getBlue() + (b.getBlue() - a.getBlue()) * k));
-    }
-
-    private static Color lerp(Color a, Color b, float t) {
-        t = Math.max(0, Math.min(1, t));
-        return new Color(
-            (int) (a.getRed() + (b.getRed() - a.getRed()) * t),
-            (int) (a.getGreen() + (b.getGreen() - a.getGreen()) * t),
-            (int) (a.getBlue() + (b.getBlue() - a.getBlue()) * t));
-    }
-
-    /** 取 spectrumLevel 且应用平滑（trim 保证不会因频率段重叠而重复平滑） */
-    private float levelFor(int binStart, int binEnd, int idx) {
-        float raw = hasSpectrum ? spectrumLevel(binStart, binEnd) : 0f;
-        return smoothLevel(idx, raw);
-    }
-
-    // ============ 渲染分发 ============
-
-    // ============ 双缓存 ============
-
-    /** 离屏后缓冲：整帧渲染完成后一次性 blit，避免逐元素绘制闪烁 */
-    private BufferedImage backBuffer;
+    // ============ 渲染 ============
 
     private void ensureBuffer(int w, int h) {
         if (backBuffer == null || backBuffer.getWidth() != w || backBuffer.getHeight() != h) {
-            backBuffer = new BufferedImage(Math.max(1, w), Math.max(1, h), BufferedImage.TYPE_INT_ARGB);
+            backBuffer = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+            bufferPrimed = false;
         }
     }
 
@@ -176,492 +144,260 @@ public class TtVisualizer extends javax.swing.JComponent {
         if (w <= 0 || h <= 0) return;
 
         ensureBuffer(w, h);
-        Graphics2D bg = backBuffer.createGraphics();
-        try {
-            bg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-            // 先铺不透明背景，避免频谱区域透出窗口下层内容（白闪/透明感）
-            bg.setColor(backgroundColor);
-            bg.fillRect(0, 0, w, h);
+        // Blur：把上一帧向背景色插值恢复，形成拖尾残影
+        boolean blurred = skinBlur && bufferPrimed;
+        if (blurred) fadeBuffer(backBuffer, fadeAmount());
+
+        Graphics2D g2 = backBuffer.createGraphics();
+        try {
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            if (!blurred) {
+                g2.setColor(backgroundColor);
+                g2.fillRect(0, 0, w, h);
+            }
+            bufferPrimed = true;
 
             switch (mode) {
-                case BARS:        drawBars(bg); break;
-                case WAVE:        drawWave(bg); break;
-                case MIRROR_BARS: drawMirrorBars(bg); break;
-                case PARTICLES:   drawParticles(bg); break;
-                case LINE:        drawLine(bg); break;
-                case AREA:        drawArea(bg); break;
-                case RADAR:       drawRadar(bg); break;
-                case LED:         drawLed(bg); break;
+                case BARS:        drawBars(g2, false); break;
+                case MIRROR_BARS: drawBars(g2, true);  break;
+                case LINE:        drawLine(g2);        break;
+                case AREA:        drawArea(g2);        break;
+                case LED:         drawLed(g2);         break;
+                case WAVE:        drawWave(g2);        break;
             }
         } finally {
-            bg.dispose();
+            g2.dispose();
         }
         g.drawImage(backBuffer, 0, 0, null);
     }
 
-    // ============ mode 0: 柱状频谱（C viz_bars） ============
+    /** 每帧向背景色恢复的比例。BlurSpeed 越大恢复越快、拖尾越短。 */
+    private float fadeAmount() {
+        float t = 0.18f + skinBlurSpeed * 0.09f;
+        if (t < 0.05f) t = 0.05f;
+        if (t > 1f) t = 1f;
+        return t;
+    }
 
-    private void drawBars(Graphics2D g2) {
+    /** 把整帧向背景色插值，产生残影衰减。 */
+    private void fadeBuffer(BufferedImage img, float t) {
+        int w = img.getWidth(), h = img.getHeight();
+        int[] px = new int[w * h];
+        img.getRGB(0, 0, w, h, px, 0, w);
+        int br = backgroundColor.getRed();
+        int bg = backgroundColor.getGreen();
+        int bb = backgroundColor.getBlue();
+        for (int i = 0; i < px.length; i++) {
+            int p = px[i];
+            int r = (p >> 16) & 0xFF;
+            int gc = (p >> 8) & 0xFF;
+            int b = p & 0xFF;
+            r  = (int) (r  + (br - r)  * t);
+            gc = (int) (gc + (bg - gc) * t);
+            b  = (int) (b  + (bb - b)  * t);
+            px[i] = (0xFF << 24) | (r << 16) | (gc << 8) | b;
+        }
+        img.setRGB(0, 0, w, h, px, 0, w);
+    }
+
+    /** 柱数：原版固定 48 段；窗口过窄时合并显示，过宽时不超过 48。 */
+    private int barCountFor(int w) {
+        // 原版柱宽约 6px（含间隙），SpectrumWide=1 时约 4px
+        int perBar = skinWide ? 5 : 7;
+        int fit = w / perBar;
+        if (fit > TtSpectrum.BANDS) fit = TtSpectrum.BANDS;
+        if (fit < 2) fit = 2;
+        return fit;
+    }
+
+    // ============ 柱状（BARS / MIRROR_BARS） ============
+
+    private void drawBars(Graphics2D g2, boolean mirror) {
         int w = getWidth(), h = getHeight();
-        int barCount = w / 6;
-        if (barCount < 4) barCount = 4;
-        if (barCount > 32) barCount = 32;
+        int bars = barCountFor(w);
 
-        float barW = (float) w / barCount;
-        float gap = barW * 0.2f;
-        if (gap < 1f) gap = 1f;
+        float bw = (float) w / bars;
+        float gap = skinWide ? Math.max(0.4f, bw * 0.08f) : Math.max(1f, bw * 0.28f);
+        float drawW = Math.max(1f, bw - gap);
 
-        Color btm = getSkinBtm(), mid = getSkinMid(), top = getSkinTop();
-        Color peak = getSkinPeak();
-        Color[] palette = {btm, mid, top, peak};
+        int baseY = mirror ? h / 2 : h;     // 柱基线
+        int span  = mirror ? h / 2 : h;     // 最大柱高
 
-        int baseY = h;
-        int half = TtRdft.FFT_N / 2;
-        for (int i = 0; i < barCount; i++) {
-            int binStart = i * half / barCount;
-            int binEnd = (i + 1) * half / barCount;
-            if (binEnd <= binStart) binEnd = binStart + 1;
+        int gTop = argb(cTop()), gMid = argb(cMid()), gBtm = argb(cBtm());
+        int peakCol = argb(cPeak());
 
-            float level = levelFor(binStart, binEnd, i);
-            int barH = (int) (level * h * 0.9f);
-            if (barH < 1) barH = 1;
+        for (int i = 0; i < bars; i++) {
+            float lv = spectrum.levelResampled(i, bars);
+            float pk = resamplePeak(i, bars);
+            int bh = (int) (lv * span);
+            if (bh < 1 && lv > 0.008f) bh = 1;
 
-            Color col = themeColor(i, barCount, palette);
-            float bx = i * barW + gap / 2;
-            float bw = barW - gap;
+            int x = Math.round(i * bw + gap * 0.5f);
+            int colW = Math.round(drawW);
+            if (colW < 1) colW = 1;
 
-            // 垂直渐变 6 段：底部实色 → 顶部半透明（α 255 → 85）
-            int segs = 6;
-            for (int s = 0; s < segs; s++) {
-                int segTop = baseY - barH + s * barH / segs;
-                int segH = barH / segs;
-                if (s == segs - 1) segH = barH - s * barH / segs;
-                if (segH <= 0) continue;
-                float v = (float) s / segs;
-                int alpha = (int) (255 - v * 170);
-                g2.setColor(new Color(col.getRed(), col.getGreen(), col.getBlue(), alpha));
-                g2.fillRect((int) bx, segTop, (int) bw, segH);
+            if (bh > 0) {
+                // 三段竖直渐变：柱底 = btm，柱中 = mid，柱顶 = top
+                for (int y = 0; y < bh; y++) {
+                    float t = (float) y / bh;
+                    int col = t < 0.5f
+                            ? lerpRgb(gBtm, gMid, t * 2f)
+                            : lerpRgb(gMid, gTop, (t - 0.5f) * 2f);
+                    int py = baseY - 1 - y;
+                    if (py < 0 || py >= h) continue;
+                    g2.setColor(new Color(col));
+                    g2.fillRect(x, py, colW, 1);
+                }
             }
-
-            // 柱顶高亮
-            if (barH >= 3 && level > 0.15f) {
-                g2.setColor(new Color(peak.getRed(), peak.getGreen(), peak.getBlue(), 230));
-                g2.fillRect((int) bx, baseY - barH, (int) bw, 2);
+            // 峰值顶线
+            int ph = (int) (pk * span);
+            if (ph > 1) {
+                int py = baseY - ph;
+                g2.setColor(new Color(peakCol));
+                g2.fillRect(x, py, colW, 1);
+            }
+            // 镜像下半（半透明对称柱）
+            if (mirror && bh > 0) {
+                int down = (int) (bh * 0.85f);
+                for (int y = 0; y < down; y++) {
+                    float t = (float) y / down;
+                    int col = t < 0.5f
+                            ? lerpRgb(gMid, gBtm, t * 2f)
+                            : lerpRgb(gTop, gMid, (t - 0.5f) * 2f);
+                    g2.setColor(blendWithBg(new Color(col), 0.55f));
+                    g2.fillRect(x, baseY + y, colW, 1);
+                }
             }
         }
     }
 
-    // ============ mode 1: 波形（C viz_wave） ============
+    private float resamplePeak(int i, int bars) {
+        if (bars <= 1) return spectrum.peak(0);
+        float fi = (float) i * (TtSpectrum.BANDS - 1) / (bars - 1);
+        int lo = (int) fi;
+        int hi = Math.min(lo + 1, TtSpectrum.BANDS - 1);
+        float k = fi - lo;
+        return spectrum.peak(lo) + (spectrum.peak(hi) - spectrum.peak(lo)) * k;
+    }
+
+    // ============ 其它模式 ============
+
+    private void drawLine(Graphics2D g2) {
+        int w = getWidth(), h = getHeight();
+        int n = Math.min(TtSpectrum.BANDS, Math.max(8, w / 4));
+        g2.setColor(cTop());
+        int px = 0, py = h;
+        for (int i = 0; i < n; i++) {
+            float lv = spectrum.levelResampled(i, n);
+            int x = (int) ((float) i / Math.max(1, n - 1) * w);
+            int y = h - (int) (lv * h * 0.95f);
+            g2.drawLine(px, py, x, y);
+            px = x; py = y;
+        }
+        g2.drawLine(px, py, w - 1, h);
+    }
+
+    private void drawArea(Graphics2D g2) {
+        int w = getWidth(), h = getHeight();
+        if (w < 2) return;
+        int n = TtSpectrum.BANDS;
+        float[] ys = new float[w];
+        for (int x = 0; x < w; x++) {
+            float fi = (float) x / (w - 1) * (n - 1);
+            int lo = (int) fi, hi = Math.min(lo + 1, n - 1);
+            float k = fi - lo;
+            float lv = spectrum.levelResampled(lo, n) * (1 - k) + spectrum.levelResampled(hi, n) * k;
+            ys[x] = h - lv * h * 0.95f;
+        }
+        java.awt.geom.Path2D.Float p = new java.awt.geom.Path2D.Float();
+        p.moveTo(0, ys[0]);
+        for (int x = 1; x < w; x++) p.lineTo(x, ys[x]);
+        p.lineTo(w - 1, h);
+        p.lineTo(0, h);
+        p.closePath();
+        g2.setPaint(new GradientPaint(0, 0, cTop(), 0, h, cBtm()));
+        g2.fill(p);
+        g2.setColor(cPeak());
+        java.awt.geom.Path2D.Float line = new java.awt.geom.Path2D.Float();
+        line.moveTo(0, ys[0]);
+        for (int x = 1; x < w; x++) line.lineTo(x, ys[x]);
+        g2.draw(line);
+    }
+
+    private void drawLed(Graphics2D g2) {
+        int w = getWidth(), h = getHeight();
+        int cell = skinWide ? 5 : 6, gap = 2;
+        int cols = Math.max(2, w / (cell + gap));
+        int rows = Math.max(2, h / (cell + gap));
+        for (int i = 0; i < cols; i++) {
+            float lv = spectrum.levelResampled(i, cols);
+            int filled = (int) (lv * rows);
+            for (int j = 0; j < rows; j++) {
+                int x = i * (cell + gap);
+                int y = h - (j + 1) * (cell + gap);
+                if (j < filled) {
+                    float t = (float) j / rows;
+                    g2.setColor(t < 0.5f ? lerpColor(cBtm(), cMid(), t * 2)
+                                         : lerpColor(cMid(), cTop(), (t - 0.5f) * 2));
+                    g2.fillRect(x, y, cell, cell);
+                    if (j == filled - 1) {
+                        g2.setColor(cPeak());
+                        g2.fillRect(x, y, cell, cell);
+                    }
+                } else {
+                    g2.setColor(new Color(255, 255, 255, 14));
+                    g2.fillRect(x, y, cell, cell);
+                }
+            }
+        }
+    }
 
     private void drawWave(Graphics2D g2) {
         int w = getWidth(), h = getHeight();
         int got = pcmCount;
-        int steps = w;
-        if (steps > got) steps = got;
-        if (steps < 8) steps = 8;
-        if (steps > 512) steps = 512;
-
-        int n = steps;
-        float[] pts = new float[n];
-        for (int i = 0; i < n; i++) {
-            int idx = got > 0 ? i * got / n : 0;
-            if (idx >= got) idx = got - 1;
-            if (idx < 0) idx = 0;
-            pts[i] = got > 0 ? pcmSamples[idx] : 0.0f;
-        }
-
-        int centerY = h / 2;
-        float scale = h * 0.4f;
-        Color top = getSkinTop();
-
-        // 多层叠加波形（3 层）
-        for (int layer = 2; layer >= 0; layer--) {
-            float alpha = layer == 0 ? 1.0f : (layer == 1 ? 0.4f : 0.15f);
-            float lscale = scale * (1 + layer * 0.3f);
-            int offset = layer * 2;
-            g2.setColor(new Color(top.getRed(), top.getGreen(), top.getBlue(), (int) (255 * alpha)));
-            int prevX = 0;
-            int prevY = centerY + (int) (pts[0] * lscale) + offset;
-            for (int i = 1; i < n; i++) {
-                int x = i * w / n;
-                int y = centerY + (int) (pts[i] * lscale) + offset;
-                g2.drawLine(prevX, prevY, x, y);
-                prevX = x;
-                prevY = y;
-            }
-        }
-
-        // 主波形下方渐变填充
-        Color btm = getSkinBtm();
-        int segs = 6;
-        for (int s = 0; s < segs; s++) {
-            float v0 = (float) s / segs;
-            float v1 = (float) (s + 1) / segs;
-            int alpha = (int) (40 * (1.0f - v0));
-            g2.setColor(new Color(btm.getRed(), btm.getGreen(), btm.getBlue(), alpha));
-            int y0 = centerY + (int) (scale * (0.5f - v0));
-            int y1 = centerY + (int) (scale * (0.5f - v1));
-            if (alpha <= 0) continue;
-            for (int i = 0; i < n; i++) {
-                int x0 = i * w / n;
-                int x1 = (i + 1) * w / n;
-                int y = centerY + (int) (pts[i] * scale);
-                int topY = Math.min(y, y0);
-                g2.fillRect(x0, topY, x1 - x0, y1 - topY);
-            }
+        if (got < 2) return;
+        int n = Math.max(16, Math.min(w, got));
+        g2.setColor(cTop());
+        int px = 0, py = h / 2;
+        for (int i = 1; i < n; i++) {
+            int idx = Math.min(i * got / n, got - 1);
+            int x = i * w / n;
+            int y = h / 2 + (int) (pcmSamples[idx] * h * 0.42f);
+            g2.drawLine(px, py, x, y);
+            px = x; py = y;
         }
     }
 
-    // ============ mode 2: 镜像柱（C viz_mirror_bars） ============
+    // ============ 颜色工具 ============
 
-    private void drawMirrorBars(Graphics2D g2) {
-        int w = getWidth(), h = getHeight();
-        int barCount = w / 4;
-        if (barCount < 4) barCount = 4;
-        if (barCount > 40) barCount = 40;
-
-        Color[] palette = {getSkinBtm(), getSkinMid(), getSkinTop()};
-        float barW = (float) w / barCount;
-        float gap = barW * 0.2f;
-        if (gap < 1) gap = 1;
-        int midY = h / 2;
-        int half = TtRdft.FFT_N / 2;
-
-        for (int i = 0; i < barCount; i++) {
-            int binStart = i * half / barCount;
-            int binEnd = (i + 1) * half / barCount;
-            if (binEnd <= binStart) binEnd = binStart + 1;
-            float level = levelFor(binStart, binEnd, i);
-            int barH = (int) (level * h * 0.45f);
-            if (barH < 1) barH = 1;
-
-            Color col = themeColor(i, barCount, palette);
-            float bx = i * barW + gap / 2;
-            float bw = barW - gap;
-
-            // 上镜像（实色）
-            g2.setColor(new Color(col.getRed(), col.getGreen(), col.getBlue(), 220));
-            g2.fillRect((int) bx, midY - barH, (int) bw, barH);
-            // 下镜像（半透明）
-            g2.setColor(new Color(col.getRed(), col.getGreen(), col.getBlue(), 140));
-            g2.fillRect((int) bx, midY, (int) bw, barH);
-        }
+    private static int argb(Color c) {
+        return (c.getRed() << 16) | (c.getGreen() << 8) | c.getBlue();
     }
 
-    // ============ mode 3: 粒子（C viz_particles） ============
-
-    private static class VizParticle {
-        float x, y, vx, vy;
-        int r, g, b;
-        float life, size;
+    private static int lerpRgb(int a, int b, float t) {
+        if (t < 0) t = 0;
+        if (t > 1) t = 1;
+        int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+        int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+        return ((int) (ar + (br - ar) * t) << 16)
+             | ((int) (ag + (bg - ag) * t) << 8)
+             |  (int) (ab + (bb - ab) * t);
     }
 
-    private static final int MAX_PARTICLES = 400;
-    private final VizParticle[] particles = new VizParticle[MAX_PARTICLES];
-    private int particleCount = 0;
-
-    private void drawParticles(Graphics2D g2) {
-        int w = getWidth(), h = getHeight();
-        float cx = w / 2.0f;
-        float cy = h / 2.0f;
-        int got = pcmCount;
-
-        // 低音能量：前 8 个采样均值
-        float bass = 0;
-        int bs = Math.min(8, got);
-        for (int i = 0; i < bs; i++) bass += pcmSamples[i];
-        bass = (bass / 8) * 0.5f + 0.5f;
-        if (bass < 0) bass = 0;
-        if (bass > 1) bass = 1;
-
-        // 中频能量：spectrum[4..32)
-        float mid = 0;
-        for (int i = 4; i < 32 && i < TtRdft.FFT_N / 2; i++) mid += spectrumBins[i];
-        mid /= 28.0f;
-        if (mid > 1) mid = 1;
-
-        Color[] palette = {getSkinBtm(), getSkinTop()};
-
-        // 低音：粒子从中心喷发
-        if (bass > 0.4f) {
-            int count = (int) (bass * 8);
-            for (int c = 0; c < count && particleCount < MAX_PARTICLES; c++) {
-                VizParticle p = new VizParticle();
-                p.x = cx + (random() % 100 - 50) / 5.0f;
-                p.y = cy + (random() % 100 - 50) / 5.0f;
-                float ang = (float) (random() % 628) / 100.0f;
-                float sp = (1.0f + (random() % 40) / 10.0f) * bass;
-                p.vx = (float) Math.cos(ang) * sp;
-                p.vy = (float) Math.sin(ang) * sp;
-                p.life = 1.0f;
-                p.size = 2.0f + (random() % 40) / 10.0f * bass;
-                int ci = random() % 64;
-                Color col = themeColor(ci, 64, palette);
-                p.r = col.getRed(); p.g = col.getGreen(); p.b = col.getBlue();
-                particles[particleCount++] = p;
-            }
-        }
-
-        // 中频：从边缘飞向中心
-        if (mid > 0.15f && got > 0) {
-            int count = (int) (mid * 6);
-            for (int c = 0; c < count && particleCount < MAX_PARTICLES; c++) {
-                VizParticle p = new VizParticle();
-                int edge = random() % 4;
-                if (edge == 0) { p.x = 0; p.y = random() % h; }
-                else if (edge == 1) { p.x = w; p.y = random() % h; }
-                else if (edge == 2) { p.x = random() % w; p.y = 0; }
-                else { p.x = random() % w; p.y = h; }
-                float dx = cx - p.x, dy = cy - p.y;
-                float dist = (float) Math.sqrt(dx * dx + dy * dy);
-                if (dist < 1) dist = 1;
-                float sp = mid * 3.0f;
-                p.vx = (dx / dist) * sp;
-                p.vy = (dy / dist) * sp;
-                p.life = 1.0f;
-                p.size = 1.5f + (random() % 30) / 20.0f;
-                int ci = random() % 64;
-                Color col = themeColor(ci, 64, palette);
-                p.r = col.getRed(); p.g = col.getGreen(); p.b = col.getBlue();
-                particles[particleCount++] = p;
-            }
-        }
-
-        // 更新并绘制
-        int write = 0;
-        for (int i = 0; i < particleCount; i++) {
-            VizParticle p = particles[i];
-            p.x += p.vx;
-            p.y += p.vy;
-            p.vy += 0.02f;   // 重力
-            p.vx *= 0.99f;
-            p.life -= 0.015f;
-            p.size *= 0.995f;
-            if (p.life <= 0) continue;
-
-            if (write != i) particles[write] = p;
-            write++;
-            int alpha = (int) (p.life * 200);
-            g2.setColor(new Color(p.r, p.g, p.b, alpha));
-            float sz = p.size > 0.5f ? p.size : 0.5f;
-            g2.fillRect((int) p.x, (int) p.y, (int) sz, (int) sz);
-        }
-        particleCount = write;
+    private Color blendWithBg(Color c, float keep) {
+        return new Color(
+                (int) (backgroundColor.getRed()   + (c.getRed()   - backgroundColor.getRed())   * keep),
+                (int) (backgroundColor.getGreen() + (c.getGreen() - backgroundColor.getGreen()) * keep),
+                (int) (backgroundColor.getBlue()  + (c.getBlue()  - backgroundColor.getBlue())  * keep));
     }
 
-    private int random() {
-        // 避免每次调用 Math.random 的开销；直接复用 Math.random()
-        return (int) (Math.random() * Integer.MAX_VALUE);
-    }
-
-    // ============ mode 4: 频谱折线（C viz_line） ============
-
-    private void drawLine(Graphics2D g2) {
-        int w = getWidth(), h = getHeight();
-        int points = w / 4;
-        if (points < 8) points = 8;
-        if (points > 64) points = 64;
-        int half = TtRdft.FFT_N / 2;
-
-        Color top = getSkinTop();
-        g2.setColor(top);
-
-        int prevX = 0;
-        int prevY = h;
-        for (int i = 0; i < points; i++) {
-            int binStart = i * half / points;
-            int binEnd = (i + 1) * half / points;
-            if (binEnd <= binStart) binEnd = binStart + 1;
-            float level = levelFor(binStart, binEnd, i);
-            int x = (int) ((float) i / points * w);
-            int y = h - (int) (level * h * 0.9f);
-            g2.drawLine(prevX, prevY, x, y);
-            prevX = x;
-            prevY = y;
-        }
-        g2.drawLine(prevX, prevY, w, h);
-    }
-
-    // ============ mode 5: 面积图（C viz_area） ============
-
-    private void drawArea(Graphics2D g2) {
-        int w = getWidth(), h = getHeight();
-        if (w < 2) w = 2;
-        int half = TtRdft.FFT_N / 2;
-        int BINS = 64;
-
-        float[] lvl = new float[BINS];
-        for (int i = 0; i < BINS; i++) {
-            int binStart = i * half / BINS;
-            int binEnd = (i + 1) * half / BINS;
-            if (binEnd <= binStart) binEnd = binStart + 1;
-            lvl[i] = levelFor(binStart, binEnd, i);
-        }
-
-        // 每个像素列的顶部曲线 y
-        float[] ys = new float[w];
-        float bottom = (float) h;
-        for (int x = 0; x < w; x++) {
-            float fx = (float) x / (w - 1);
-            float fi = fx * (BINS - 1);
-            int lo = (int) fi;
-            int hi = lo + 1;
-            if (hi >= BINS) hi = BINS - 1;
-            float k = fi - lo;
-            float level = lvl[lo] + (lvl[hi] - lvl[lo]) * k;
-            float y = bottom - level * h * 0.9f;
-            if (y < 0) y = 0;
-            ys[x] = y;
-        }
-
-        // 渐变填充（top → btm）
-        Color top = getSkinTop();
-        Color btm = getSkinBtm();
-        g2.setPaint(new GradientPaint(0, 0, new Color(top.getRed(), top.getGreen(), top.getBlue(), 210),
-                                      0, h, new Color(btm.getRed(), btm.getGreen(), btm.getBlue(), 60)));
-        Path2D.Float area = new Path2D.Float();
-        area.moveTo(0, ys[0]);
-        for (int x = 1; x < w; x++) area.lineTo(x, ys[x]);
-        area.lineTo(w - 1, bottom);
-        area.lineTo(0, bottom);
-        area.closePath();
-        g2.fill(area);
-
-        // 顶线描边：peak 双层（外光晕 + 主线）
-        Color peak = getSkinPeak();
-        g2.setStroke(new BasicStroke(1f));
-        g2.setColor(new Color(peak.getRed(), peak.getGreen(), peak.getBlue(), 90));
-        Path2D.Float glow = new Path2D.Float();
-        glow.moveTo(0, ys[0] - 1);
-        for (int x = 1; x < w; x++) glow.lineTo(x, ys[x] - 1);
-        g2.draw(glow);
-
-        g2.setColor(peak);
-        Path2D.Float main = new Path2D.Float();
-        main.moveTo(0, ys[0]);
-        for (int x = 1; x < w; x++) main.lineTo(x, ys[x]);
-        g2.draw(main);
-    }
-
-    // ============ mode 6: 雷达（C viz_radar） ============
-
-    private void drawRadar(Graphics2D g2) {
-        int w = getWidth(), h = getHeight();
-        int AXES = 12, RINGS = 4, SEGS = 40;
-        float cx = w / 2.0f, cy = h / 2.0f;
-        float radius = Math.min(w, h) * 0.5f - 6.0f;
-        if (radius < 10) radius = 10;
-
-        Color btm = getSkinBtm();
-
-        // 同心圆环 + 轴辐（btm 色低透明度网格）
-        for (int r = 1; r <= RINGS; r++) {
-            float rr = radius * r / RINGS;
-            int a = 16 + r * 15;
-            g2.setColor(new Color(btm.getRed(), btm.getGreen(), btm.getBlue(), a));
-            for (int s = 0; s < SEGS; s++) {
-                float a0 = (float) (2 * Math.PI * s / SEGS);
-                float a1 = (float) (2 * Math.PI * (s + 1) / SEGS);
-                g2.drawLine((int) (cx + Math.cos(a0) * rr), (int) (cy + Math.sin(a0) * rr),
-                            (int) (cx + Math.cos(a1) * rr), (int) (cy + Math.sin(a1) * rr));
-            }
-        }
-        g2.setColor(new Color(btm.getRed(), btm.getGreen(), btm.getBlue(), 40));
-        for (int i = 0; i < AXES; i++) {
-            float ang = (float) (-Math.PI / 2 + 2 * Math.PI * i / AXES);
-            g2.drawLine((int) cx, (int) cy,
-                        (int) (cx + Math.cos(ang) * radius), (int) (cy + Math.sin(ang) * radius));
-        }
-
-        // 每轴 level → 半径（平滑）
-        float[] lvl = new float[AXES];
-        int half = TtRdft.FFT_N / 2;
-        for (int i = 0; i < AXES; i++) {
-            int binStart = i * half / AXES;
-            int binEnd = (i + 1) * half / AXES;
-            if (binEnd <= binStart) binEnd = binStart + 1;
-            lvl[i] = levelFor(binStart, binEnd, i);
-        }
-
-        // 中心放射渐变填充（top 色）
-        Color top = getSkinTop();
-        Path2D.Float fan = new Path2D.Float();
-        fan.moveTo(cx, cy);
-        for (int i = 0; i <= AXES; i++) {
-            int ii = i % AXES;
-            float ang = (float) (-Math.PI / 2 + 2 * Math.PI * ii / AXES);
-            float rr = lvl[ii] * radius * 0.92f;
-            fan.lineTo(cx + (float) Math.cos(ang) * rr, cy + (float) Math.sin(ang) * rr);
-        }
-        fan.closePath();
-        g2.setColor(new Color(top.getRed(), top.getGreen(), top.getBlue(), 70));
-        g2.fill(fan);
-
-        // 多边形描边：peak 双层
-        Color peak = getSkinPeak();
-        g2.setStroke(new BasicStroke(1f));
-        g2.setColor(new Color(peak.getRed(), peak.getGreen(), peak.getBlue(), 90));
-        Path2D.Float glow = new Path2D.Float();
-        for (int i = 0; i <= AXES; i++) {
-            int ii = i % AXES;
-            float ang = (float) (-Math.PI / 2 + 2 * Math.PI * ii / AXES);
-            float rr = lvl[ii] * radius * 0.92f + 1;
-            if (i == 0) glow.moveTo(cx + (float) Math.cos(ang) * rr, cy + (float) Math.sin(ang) * rr);
-            else glow.lineTo(cx + (float) Math.cos(ang) * rr, cy + (float) Math.sin(ang) * rr);
-        }
-        glow.closePath();
-        g2.draw(glow);
-        g2.setColor(peak);
-        Path2D.Float main = new Path2D.Float();
-        for (int i = 0; i <= AXES; i++) {
-            int ii = i % AXES;
-            float ang = (float) (-Math.PI / 2 + 2 * Math.PI * ii / AXES);
-            float rr = lvl[ii] * radius * 0.92f;
-            if (i == 0) main.moveTo(cx + (float) Math.cos(ang) * rr, cy + (float) Math.sin(ang) * rr);
-            else main.lineTo(cx + (float) Math.cos(ang) * rr, cy + (float) Math.sin(ang) * rr);
-        }
-        main.closePath();
-        g2.draw(main);
-    }
-
-    // ============ mode 7: LED 点阵（C viz_led） ============
-
-    private void drawLed(Graphics2D g2) {
-        int w = getWidth(), h = getHeight();
-        int cell = 6, gap = 2;
-        int cols = w / (cell + gap);
-        int rows = h / (cell + gap);
-        if (cols < 2) cols = 2;
-        if (rows < 2) rows = 2;
-
-        Color[] palette = {getSkinBtm(), getSkinMid(), getSkinTop()};
-        int half = TtRdft.FFT_N / 2;
-
-        for (int i = 0; i < cols; i++) {
-            int binStart = i * half / cols;
-            int binEnd = (i + 1) * half / cols;
-            if (binEnd <= binStart) binEnd = binStart + 1;
-            float level = levelFor(binStart, binEnd, i);
-            int filled = (int) (level * rows);
-            if (filled > rows) filled = rows;
-
-            for (int j = 0; j < rows; j++) {
-                float ry = h - (j + 1) * (cell + gap);
-                int rx = i * (cell + gap);
-                if (j < filled) {
-                    Color c = themeColor(j, rows, palette);
-                    g2.setColor(c);
-                    g2.fillRect(rx, (int) ry, cell, cell);
-                    if (j == filled - 1) {  // 顶部点亮格高亮为白色
-                        g2.setColor(new Color(255, 255, 255, 235));
-                        g2.fillRect(rx, (int) ry, cell, cell);
-                    }
-                } else {
-                    g2.setColor(new Color(35, 35, 35, 110));
-                    g2.fillRect(rx, (int) ry, cell, cell);
-                }
-            }
-        }
+    private static Color lerpColor(Color a, Color b, float t) {
+        if (t < 0) t = 0;
+        if (t > 1) t = 1;
+        return new Color(
+                (int) (a.getRed() + (b.getRed() - a.getRed()) * t),
+                (int) (a.getGreen() + (b.getGreen() - a.getGreen()) * t),
+                (int) (a.getBlue() + (b.getBlue() - a.getBlue()) * t));
     }
 }
