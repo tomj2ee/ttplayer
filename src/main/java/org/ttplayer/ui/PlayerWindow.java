@@ -48,6 +48,11 @@ public class PlayerWindow extends SkinWindow {
     // 子窗口状态
     private boolean[] childWindowStatesBeforeMinimize;
 
+    /** 停止状态下是否已清空过频谱（避免每 20ms 重复清屏） */
+    private boolean clearedWhileStopped = false;
+    /** 上一次见到的频谱重置世代号：变化即代表换曲/停止，需要清屏。 */
+    private int lastVizResetGen = -1;
+
     public PlayerWindow(TtSkin skin, PlayerEngine playerEngine) {
         super(skin, findWindow(skin), false);
         this.playerEngine = playerEngine;
@@ -554,14 +559,37 @@ public class PlayerWindow extends SkinWindow {
         if (playerEngine == null) return;
         boolean mainVisible = isVisible();
         boolean miniVisible = miniWindow != null && miniWindow.isVisible();
-        if ((visualizer != null && mainVisible) || miniVisible) {
-            byte[] data = playerEngine.getAudioData();
-            if (visualizer != null && mainVisible) {
-                visualizer.updateData(data);
-            }
-            if (miniVisible) {
-                miniWindow.updateVisualizer(data);
-            }
+        if (!mainVisible && !miniVisible) return;
+
+        // 换曲/停止：引擎世代号变化 → 立即清屏一次。
+        // 不能用 isPlaying() 判断：play() 内部 stopPlayback()→startPlayback()
+        // 是连续同步执行，20ms 轮询抓不到 playing 的瞬时 false，
+        // 旧频谱会残留到第一帧新数据画出来为止（用户反馈的问题 1）。
+        int gen = playerEngine.getVizResetGen();
+        if (gen != lastVizResetGen) {
+            lastVizResetGen = gen;
+            if (visualizer != null && mainVisible) visualizer.clearDisplay();
+            if (miniVisible) miniWindow.clearVisualizer();
+            // 换曲时此刻已在播放 → clearedWhileStopped=false，继续往下取新数据，
+            // 使新曲目的频谱在同一帧就接上，不浪费一次刷新。
+            clearedWhileStopped = !playerEngine.isPlaying();
+        }
+
+        if (!playerEngine.isPlaying()) {
+            if (clearedWhileStopped) return;      // 已清过，无需每 20ms 重复刷
+            clearedWhileStopped = true;
+            if (visualizer != null && mainVisible) visualizer.clearDisplay();
+            if (miniVisible) miniWindow.clearVisualizer();
+            return;
+        }
+        clearedWhileStopped = false;
+
+        byte[] data = playerEngine.getAudioData();
+        if (visualizer != null && mainVisible) {
+            visualizer.updateData(data);
+        }
+        if (miniVisible) {
+            miniWindow.updateVisualizer(data);
         }
     }
 

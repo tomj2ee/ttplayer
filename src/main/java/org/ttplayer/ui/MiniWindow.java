@@ -323,6 +323,13 @@ public class MiniWindow extends SkinWindow {
         }
     }
 
+    /** 立即清空迷你窗口频谱画面（换曲/停止时调用） */
+    public void clearVisualizer() {
+        if (visualizer != null) {
+            visualizer.clearDisplay();
+        }
+    }
+
     public void setOnExitMiniMode(Runnable r) { this.onExitMiniMode = r; }
     public void setOnToggleLyric(Runnable r) { this.onToggleLyric = r; }
 
