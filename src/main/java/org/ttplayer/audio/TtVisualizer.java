@@ -35,7 +35,7 @@ public class TtVisualizer extends JComponent {
 
     /** 显示模式。原版主用 BARS；其余模式保留供切换，算法同源。 */
     public enum Mode {
-        BARS, MIRROR_BARS, LINE, AREA, LED, WAVE
+        BARS, MIRROR_BARS, LINE, AREA, LED, WAVE, STARRY_SKY
     }
 
     private Mode mode = Mode.BARS;
@@ -76,6 +76,21 @@ public class TtVisualizer extends JComponent {
     private float[] areaEnv = new float[0];
     private float[] areaPk  = new float[0];
     private int[]   areaRowCol = new int[0];
+
+    // STARRY_SKY 模式的粒子系统（避免每帧分配）
+    private static class Star {
+        float x, y;           // 屏幕位置
+        float baseX, baseY;   // 基准位置
+        float z;              // 深度（0=远处，1=屏幕前）
+        float speed;          // 移动速度
+        float size;           // 大小
+        float brightness;     // 亮度
+        float twinklePhase;   // 闪烁相位
+        int band;             // 对应的频段
+    }
+    private Star[] stars = new Star[0];
+    private long frameCount = 0;
+    private java.util.Random starRandom = new java.util.Random(42);
 
     // 默认配色（静态常量：确保 cTop()/cMid()/... 永不分配对象）
     private static final Color DEF_TOP  = new Color(18, 114, 175);
@@ -224,6 +239,7 @@ public class TtVisualizer extends JComponent {
             case AREA:        drawArea();      break;
             case LED:         drawLed();       break;
             case WAVE:        drawWave();      break;
+            case STARRY_SKY:  drawStarrySky(); break;
         }
 
         // px 就是图像底层栅格：绘制已完成，直接绘制到组件（零拷贝、零分配）
@@ -519,6 +535,326 @@ public class TtVisualizer extends JComponent {
             int y = h / 2 + (int) (pcmSamples[idx] * h * 0.42f);
             linePx(ppx, ppy, x, y, col);
             ppx = x; ppy = y;
+        }
+    }
+
+    /**
+     * STARRY_SKY 模式 —— 梦幻星空频谱：星星从远处飞来的3D纵深效果
+     *
+     * <p>视觉特点：</p>
+     * <ul>
+     *   <li>3D纵深感：星星从远处（黑色）向近处（明亮）移动</li>
+     *   <li>铺面而来：星星通过屏幕后消失，再从远处重新生成</li>
+     *   <li>频谱驱动速度：音乐能量越强，星星飞行速度越快</li>
+     *   <li>自然渐变：远处星星暗小，近处星星亮大</li>
+     *   <li>频段分布：星星按频段横向分布</li>
+     * </ul>
+     */
+    private void drawStarrySky() {
+        int w = cw, h = ch;
+        frameCount++;
+
+        // 1. 绘制深邃黑色背景
+        drawStarryBackground(w, h);
+
+        // 2. 初始化星星粒子系统
+        int totalStars = 100 + w * h / 1000;
+        if (stars.length != totalStars) {
+            initStars(totalStars, w, h);
+        }
+
+        // 3. 更新和绘制星星（3D飞行效果）
+        int bands = TtSpectrum.BANDS;
+
+        // 计算平均能量，影响全局飞行速度
+        float avgLevel = 0;
+        for (int b = 0; b < bands; b++) {
+            avgLevel += spectrum.level(b);
+        }
+        avgLevel /= bands;
+
+        for (int i = 0; i < stars.length; i++) {
+            Star s = stars[i];
+
+            // 获取对应频段的能量
+            float level = spectrum.level(s.band);
+            float peak = spectrum.peak(s.band);
+
+            // 基础飞行速度 + 响应能量
+            s.speed = 0.008f + avgLevel * 0.015f + level * 0.005f;
+
+            // 深度更新：z 从 0（远）到 1（近），然后重置
+            s.z += s.speed;
+            if (s.z > 1.2f) {
+                // 星星飞出屏幕，重置到远处
+                s.z = -0.1f;
+                s.baseX = starRandom.nextFloat() * w;
+                s.baseY = starRandom.nextFloat() * h;
+                s.band = (int)(s.baseX / w * bands);
+                if (s.band >= bands) s.band = bands - 1;
+            }
+
+            // 计算屏幕坐标（透视投影）
+            if (s.z <= 0) {
+                // 远处星星不显示
+                continue;
+            }
+
+            // 透视变换：越近越大，越远越小
+            float perspective = s.z * s.z;  // 非线性缩放，增强3D效果
+            float screenX = w / 2 + (s.baseX - w / 2) * perspective;
+            float screenY = h / 2 + (s.baseY - h / 2) * perspective;
+
+            s.x = screenX;
+            s.y = screenY;
+
+            // 大小随深度变化（远小近大）
+            s.size = 0.3f + s.z * 4f + level * s.z * 2f;
+            if (s.size > 8f) s.size = 8f;
+
+            // 亮度随深度和能量变化
+            float depthBrightness = s.z * 0.8f;  // 深度贡献
+            float breathe = (float)Math.sin(s.twinklePhase) * 0.2f;
+            s.brightness = 0.1f + depthBrightness + level * 0.4f + breathe;
+            if (s.brightness > 1f) s.brightness = 1f;
+            if (s.brightness < 0.05f) s.brightness = 0.05f;
+
+            // 闪烁动画
+            s.twinklePhase += 0.04f + level * 0.1f;
+
+            // 极轻微的位置抖动
+            float jitter = level * 0.3f * s.z;
+            s.x += (starRandom.nextFloat() - 0.5f) * jitter;
+            s.y += (starRandom.nextFloat() - 0.5f) * jitter;
+
+            // 绘制星星
+            drawStar(s, level, s.z);
+        }
+
+        // 4. 绘制流星效果
+        drawMeteors(w, h);
+    }
+
+    /** 初始化星星粒子系统 */
+    private void initStars(int count, int w, int h) {
+        stars = new Star[count];
+        int bands = TtSpectrum.BANDS;
+
+        for (int i = 0; i < count; i++) {
+            Star s = new Star();
+            s.baseX = starRandom.nextFloat() * w;
+            s.baseY = starRandom.nextFloat() * h;
+            s.x = s.baseX;
+            s.y = s.baseY;
+
+            // 初始化深度（0-1之间均匀分布）
+            s.z = starRandom.nextFloat() * 0.8f;
+
+            // 速度基础值
+            s.speed = 0.005f + starRandom.nextFloat() * 0.003f;
+
+            s.size = 1f;
+            s.brightness = 0.5f;
+            s.twinklePhase = starRandom.nextFloat() * (float)Math.PI * 2;
+
+            // 根据位置分配频段（横向分布）
+            s.band = (int)(s.baseX / w * bands);
+            if (s.band >= bands) s.band = bands - 1;
+            if (s.band < 0) s.band = 0;
+
+            // 将星星添加到数组中
+            stars[i] = s;
+        }
+    }
+
+    /** 绘制星空背景 */
+    private void drawStarryBackground(int w, int h) {
+        // 纯黑色背景，简洁而优雅
+        int centerX = w / 2;
+        int centerY = h / 2;
+        float maxDist = (float)Math.sqrt(centerX * centerX + centerY * centerY);
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                float dx = x - centerX;
+                float dy = y - centerY;
+                float dist = (float)Math.sqrt(dx * dx + dy * dy);
+                float t = Math.min(1f, dist / maxDist * 0.3f);  // 很细微的渐变
+
+                // 从纯黑到极深的蓝黑色
+                int r = (int)(2 * (1 - t));
+                int g = (int)(2 * (1 - t));
+                int b = (int)(8 * (1 - t));
+
+                px[y * cw + x] = (r << 16) | (g << 8) | b;
+            }
+        }
+    }
+
+    /** 绘制单个星星（带光晕效果和深度） */
+    private void drawStar(Star s, float energy, float depth) {
+        int x = (int)s.x;
+        int y = (int)s.y;
+
+        // 根据能量和深度选择颜色
+        int starColor = getStarColor(s.brightness, energy);
+
+        // 星星核心大小
+        int size = (int)s.size;
+        if (size < 1) size = 1;
+
+        // 光晕范围随深度变化（近处更大的光晕）
+        int haloSize = size + (int)(depth * 2);
+
+        // 绘制光晕
+        for (int dy = -haloSize; dy <= haloSize; dy++) {
+            for (int dx = -haloSize; dx <= haloSize; dx++) {
+                float dist = (float)Math.sqrt(dx * dx + dy * dy);
+                if (dist > haloSize + 1) continue;
+
+                int px_x = x + dx;
+                int px_y = y + dy;
+                if (px_x < 0 || px_x >= cw || px_y < 0 || px_y >= ch) continue;
+
+                // 光晕强度随深度和距离衰减
+                float haloIntensity = s.brightness * (1f - dist / (haloSize + 1)) * depth * 0.6f;
+                if (haloIntensity < 0.01f) continue;
+
+                int idx = px_y * cw + px_x;
+                px[idx] = blendStarColor(px[idx], starColor, haloIntensity);
+            }
+        }
+
+        // 绘制星星核心（更亮）
+        for (int dy = -size; dy <= size; dy++) {
+            for (int dx = -size; dx <= size; dx++) {
+                float dist = (float)Math.sqrt(dx * dx + dy * dy);
+                if (dist > size) continue;
+
+                int px_x = x + dx;
+                int px_y = y + dy;
+                if (px_x < 0 || px_x >= cw || px_y < 0 || px_y >= ch) continue;
+
+                // 核心强度
+                float coreIntensity = s.brightness * (1f - dist / (size + 0.5f));
+                if (coreIntensity < 0.1f) continue;
+
+                int idx = px_y * cw + px_x;
+                px[idx] = blendStarColor(px[idx], starColor, coreIntensity);
+            }
+        }
+    }
+
+    /** 原始的drawStar方法（兼容性） */
+    private void drawStar(Star s, float energy) {
+        drawStar(s, energy, 1f);  // 默认深度为1
+    }
+
+    /** 获取星星颜色（根据亮度和能量）- 金色星光系统 */
+    private int getStarColor(float brightness, float energy) {
+        // 颜色渐变：深蓝 → 金黄 → 白色
+        float t = brightness + energy * 0.3f;
+        if (t > 1f) t = 1f;
+
+        int r, g, b;
+        if (t < 0.5f) {
+            // 深蓝 (60, 80, 180) → 金黄 (255, 200, 100)
+            float local_t = t / 0.5f;
+            r = (int)(60 + (255 - 60) * local_t);
+            g = (int)(80 + (200 - 80) * local_t);
+            b = (int)(180 + (100 - 180) * local_t);
+        } else {
+            // 金黄 (255, 200, 100) → 白色 (255, 255, 255)
+            float local_t = (t - 0.5f) / 0.5f;
+            r = (int)(255);
+            g = (int)(200 + (255 - 200) * local_t);
+            b = (int)(100 + (255 - 100) * local_t);
+        }
+
+        return (r << 16) | (g << 8) | b;
+    }
+
+    /** 混合星星颜色到背景 */
+    private int blendStarColor(int bgColor, int starColor, float alpha) {
+        if (alpha <= 0) return bgColor;
+        if (alpha >= 1f) return starColor;
+
+        int bg_r = (bgColor >> 16) & 0xFF;
+        int bg_g = (bgColor >> 8) & 0xFF;
+        int bg_b = bgColor & 0xFF;
+
+        int star_r = (starColor >> 16) & 0xFF;
+        int star_g = (starColor >> 8) & 0xFF;
+        int star_b = starColor & 0xFF;
+
+        int r = (int)(bg_r + (star_r - bg_r) * alpha);
+        int g = (int)(bg_g + (star_g - bg_g) * alpha);
+        int b = (int)(bg_b + (star_b - bg_b) * alpha);
+
+        return (r << 16) | (g << 8) | b;
+    }
+
+    /** 绘制流星效果（高峰值触发） */
+    private void drawMeteors(int w, int h) {
+        // 检测高能量峰值
+        for (int band = 0; band < TtSpectrum.BANDS; band++) {
+            float peak = spectrum.peak(band);
+            if (peak > 0.8f) {
+                // 随机决定是否触发流星（避免过于频繁）
+                if (starRandom.nextFloat() < 0.05f) {
+                    drawMeteor(band, w, h, peak);
+                }
+            }
+        }
+    }
+
+    /** 绘制单个流星 */
+    private void drawMeteor(int band, int w, int h, float intensity) {
+        // 流星起点：从屏幕中心向外辐射
+        float startX = w / 2;
+        float startY = h / 2;
+
+        // 流星方向：根据频段位置（形成放射状）
+        float angle = (float)band / TtSpectrum.BANDS * (float)Math.PI * 2;
+        float dirX = (float)Math.cos(angle);
+        float dirY = (float)Math.sin(angle);
+
+        // 流星长度随能量变化
+        float meteorLength = 60 + intensity * 80;
+
+        // 流星终点
+        float endX = startX + dirX * meteorLength;
+        float endY = startY + dirY * meteorLength;
+
+        // 流星颜色：金黄到白色
+        int meteorColor = (255 << 16) | (200 << 8) | 100;
+
+        // 绘制流星尾迹（渐变透明）
+        int segments = 12;
+        for (int i = 0; i < segments; i++) {
+            float t = (float)i / segments;
+            int mx = (int)(startX + (endX - startX) * t);
+            int my = (int)(startY + (endY - startY) * t);
+
+            // 尾迹从前到后逐渐透明
+            float alpha = (1f - t) * intensity * 0.5f;
+
+            // 绘制流星点（带模糊）
+            int size = (int)(2 + (1 - t) * 2);
+            for (int dy = -size; dy <= size; dy++) {
+                for (int dx = -size; dx <= size; dx++) {
+                    float dist = (float)Math.sqrt(dx * dx + dy * dy);
+                    if (dist > size) continue;
+
+                    int px_x = mx + dx;
+                    int px_y = my + dy;
+                    if (px_x >= 0 && px_x < cw && px_y >= 0 && px_y < ch) {
+                        int idx = px_y * cw + px_x;
+                        float pointAlpha = alpha * (1f - dist / (size + 1));
+                        px[idx] = blendStarColor(px[idx], meteorColor, pointAlpha);
+                    }
+                }
+            }
         }
     }
 
