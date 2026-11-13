@@ -2,6 +2,10 @@
 
 [中文](#中文) | [English](#english) | [日本語](#日本語) | [한국어](#한국어) | [Deutsch](#deutsch)
 
+## C++ 原生版本 / C++ Native Player
+
+`cpp/` 提供基于 C++20、FFmpeg、SDL3、SDL3_ttf 的原生音频播放器，包含皮肤、多窗口、播放列表、均衡器、本地/在线歌词、桌面歌词与托盘。直接使用 `cpp/thirdparty/` 本地源码离线构建，不影响 Java 版。Windows 图形界面构建入口为 `cpp/build.ps1`；macOS（Apple Silicon / Intel 分别构建）入口为 `cpp/build-macos.sh`，生成 `.app`，打包入口为 `cpp/package-macos.sh`。Windows 已在本机验证，macOS 平台适配及 CI 入口已加入但尚待 Mac 构建与真机验收。详细运行说明见 `cpp/README.md`，范围与差异见 `cpp/MIGRATION.md`。
+
 ## 截图 / Screenshots
 
 **实际运行截图 / Real screenshots**

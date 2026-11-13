@@ -37,7 +37,11 @@ public class PlayerEngine {
 
     // 频谱分析用单声道环形缓冲（立体声左右平均，对应 C 的 pcm_push）
     // 容量 16384 单声道帧（≈372ms），需容纳音频输出缓冲 + 分析窗，以便做播放位置对齐。
-    private final short[] vizRing = new short[16384];
+    private static final int VIZ_RING_SIZE = 65536;
+    private static final int VIZ_WINDOW_FRAMES = 2048;
+    private final short[] vizLeft = new short[VIZ_RING_SIZE];
+    private final short[] vizRight = new short[VIZ_RING_SIZE];
+    private final Object vizLock = new Object();
     private int vizHead = 0;
     /** 累计已解码写入环缓冲的单声道帧数（单调递增）。 */
     private volatile long vizPushed = 0;
@@ -234,6 +238,11 @@ public class PlayerEngine {
                     }
                     // seek 会丢弃已缓冲音频：重设对齐基准，避免 lag 计算出负延迟
                     try { dl.flush(); } catch (Exception ignored) {}
+                    synchronized (vizLock) {
+                        vizHead = 0;
+                        vizCount = 0;
+                    }
+                    vizResetGen++;
                     resetVisualAlign(dl);
                     seekRequested = false;
                     continue;
@@ -275,17 +284,17 @@ public class PlayerEngine {
                 // 立体声左右平均 → 单声道环缓冲（对应 C pcm_push，取滤波后数据）。
                 // 关键：必须在 dl.write() 之前入环 —— dl.write 是阻塞调用，
                 // 若放在其后，解码线程阻塞期间环缓冲不更新，频谱会「冻结后跳跃」。
-                int mono = count / 2;
-                for (int m = 0; m < mono; m++) {
-                    int base = m * 4;
-                    int l = ((pcm[base + 1] << 8) | (pcm[base] & 0xFF));
-                    int r = ((pcm[base + 3] << 8) | (pcm[base + 2] & 0xFF));
-                    short s = (short) ((l + r) / 2);
-                    vizRing[vizHead] = s;
-                    vizHead = (vizHead + 1) % vizRing.length;
-                    if (vizCount < vizRing.length) vizCount++;
+                int frames = count / 2;
+                synchronized (vizLock) {
+                    for (int frameIndex = 0; frameIndex < frames; frameIndex++) {
+                        int base = frameIndex * 4;
+                        vizLeft[vizHead] = (short) ((pcm[base + 1] << 8) | (pcm[base] & 0xFF));
+                        vizRight[vizHead] = (short) ((pcm[base + 3] << 8) | (pcm[base + 2] & 0xFF));
+                        vizHead = (vizHead + 1) % VIZ_RING_SIZE;
+                        if (vizCount < VIZ_RING_SIZE) vizCount++;
+                    }
+                    vizPushed += frames;
                 }
-                vizPushed += mono;
 
                 dl.write(pcm, 0, pcm.length);
 
@@ -364,11 +373,13 @@ public class PlayerEngine {
         }
         line = null;
         positionUs = 0;
-        vizHead = 0;
-        vizCount = 0;
-        vizPushed = 0;
-        vizSyncPushed = 0;
-        vizSyncPlayed = 0;
+        synchronized (vizLock) {
+            vizHead = 0;
+            vizCount = 0;
+            vizPushed = 0;
+            vizSyncPushed = 0;
+            vizSyncPlayed = 0;
+        }
         seekRequested = false;
         durationUs = 0;
         SwingUtilities.invokeLater(() -> {
@@ -400,9 +411,11 @@ public class PlayerEngine {
      * 在 seek / 恢复播放 / 重新开始等会丢弃音频线缓冲的时刻调用。
      */
     private void resetVisualAlign(SourceDataLine dl) {
-        vizSyncPushed = vizPushed;
-        if (dl != null && dl.isOpen()) {
-            try { vizSyncPlayed = dl.getLongFramePosition(); } catch (Exception ignored) { }
+        synchronized (vizLock) {
+            vizSyncPushed = vizPushed;
+            if (dl != null && dl.isOpen()) {
+                try { vizSyncPlayed = dl.getLongFramePosition(); } catch (Exception ignored) { }
+            }
         }
     }
 
@@ -434,44 +447,41 @@ public class PlayerEngine {
      * <p>若线尚未启动或无有效播放位置，则退化为取环缓冲最新的一段。</p>
      */
     public byte[] getAudioData() {
-        int n = Math.min(1024, vizCount);
-        if (n <= 0) return null;
-        if (vizOut == null || vizOut.length != n * 2) vizOut = new byte[n * 2];
-
-        // 计算「已解码但尚未播放」的帧数，把读窗从解码前沿倒推回去。
-        long lag = 0;
+        long playedFrames = -1;
         SourceDataLine ln = this.line;
         if (ln != null && ln.isOpen()) {
             try {
-                long played = ln.getLongFramePosition();
-                long pushedNet = vizPushed - vizSyncPushed;
-                long playedNet = played - vizSyncPlayed;
-                lag = pushedNet - playedNet;
-                if (lag < 0) lag = 0;
-                // 上限必须同时受两处约束，否则会读到「尚未写入」的零区：
-                //   1) 环缓冲容量（避免绕圈）；
-                //   2) 实际有效帧数 vizCount - n（避免启动/seek 后数据不足时读到空洞，
-                //      那样频谱会迟迟不显示 —— 正是「播放时没有马上显示频谱」的根因）。
-                long maxLag = (long) vizCount - n;
-                long ringMax = (long) vizRing.length - n - 1;
-                if (maxLag > ringMax) maxLag = ringMax;
-                if (maxLag < 0) maxLag = 0;
-                if (lag > maxLag) lag = maxLag;
+                playedFrames = ln.getLongFramePosition();
             } catch (Exception ignored) {
-                lag = 0;
+                playedFrames = -1;
             }
         }
-
-        int idx = (int) (vizHead - n - lag);
-        idx %= vizRing.length;
-        if (idx < 0) idx += vizRing.length;
-
-        int j = 0;
-        for (int i = 0; i < n; i++) {
-            short s = vizRing[(idx + i) % vizRing.length];
-            vizOut[j++] = (byte) (s & 0xFF);
-            vizOut[j++] = (byte) ((s >> 8) & 0xFF);
+        synchronized (vizLock) {
+            int frames = Math.min(VIZ_WINDOW_FRAMES, vizCount);
+            if (frames <= 0) return null;
+            long lag = 0;
+            if (playedFrames >= 0) {
+                lag = (vizPushed - vizSyncPushed) - (playedFrames - vizSyncPlayed);
+                if (lag < 0) lag = 0;
+                long maxLag = Math.max(0L, (long) vizCount - frames);
+                long ringMax = (long) VIZ_RING_SIZE - frames - 1;
+                if (maxLag > ringMax) maxLag = ringMax;
+                if (lag > maxLag) lag = maxLag;
+            }
+            if (vizOut == null || vizOut.length != frames * 4) vizOut = new byte[frames * 4];
+            int index = (int) (vizHead - frames - lag) % VIZ_RING_SIZE;
+            if (index < 0) index += VIZ_RING_SIZE;
+            int output = 0;
+            for (int frame = 0; frame < frames; frame++) {
+                int source = (index + frame) % VIZ_RING_SIZE;
+                short left = vizLeft[source];
+                short right = vizRight[source];
+                vizOut[output++] = (byte) left;
+                vizOut[output++] = (byte) (left >> 8);
+                vizOut[output++] = (byte) right;
+                vizOut[output++] = (byte) (right >> 8);
+            }
+            return vizOut;
         }
-        return vizOut;
     }
 }
