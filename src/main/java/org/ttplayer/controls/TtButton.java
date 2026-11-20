@@ -18,6 +18,7 @@ public class TtButton extends JComponent {
     private boolean enabled = true;
     private boolean selected = false;   // 选中驻留态（用于启用开关），显示按下帧
     private boolean rollover;
+    private boolean mousePressed;
     private final List<ActionListener> listeners = new ArrayList<>();
 
     public TtButton(byte[] bmpData, int left, int top, int right, int bottom) {
@@ -60,11 +61,12 @@ public class TtButton extends JComponent {
             }
             @Override
             public void mousePressed(MouseEvent e) {
-                if (enabled) { state = State.PRESSED; repaint(); }
+                if (enabled && javax.swing.SwingUtilities.isLeftMouseButton(e)) { mousePressed = true; state = State.PRESSED; repaint(); }
             }
             @Override
             public void mouseReleased(MouseEvent e) {
-                if (enabled) {
+                if (enabled && mousePressed && javax.swing.SwingUtilities.isLeftMouseButton(e)) {
+                    mousePressed = false;
                     state = rollover ? State.HOVER : State.NORMAL;
                     repaint();
                     if (rollover) fireActionPerformed();
@@ -87,7 +89,7 @@ public class TtButton extends JComponent {
     }
 
     public void doClick() {
-        fireActionPerformed();
+        if (enabled) fireActionPerformed();
     }
 
     @Override

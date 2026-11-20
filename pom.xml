@@ -21,6 +21,11 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>5.14.0</version>
+        </dependency>
         <!-- JavaCV + FFmpeg 音频解码/元数据（仅绑定类，不含原生库） -->
         <dependency>
             <groupId>org.bytedeco</groupId>

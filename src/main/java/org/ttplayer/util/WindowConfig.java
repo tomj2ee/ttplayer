@@ -19,7 +19,7 @@ public class WindowConfig {
     }
 
     public static void saveAll(JFrame main, JFrame lyric, JFrame eq, JFrame playlist, JFrame mini, boolean inMiniMode, String skinPath) {
-        Properties props = new Properties();
+        Properties props = loadAll();
         putWindow(props, "main", main);
         putWindow(props, "lyric", lyric);
         putWindow(props, "eq", eq);
@@ -73,12 +73,15 @@ public class WindowConfig {
         return getWindow(props, "mini", mini);
     }
 
+    public static boolean hasMiniWindowPosition() { return loadAll().getProperty("mini.x") != null; }
+
     /**
      * 清除所有窗口位置配置，只保留皮肤路径
      * 用于切换皮肤后重置窗口布局
      */
     public static void clearWindowPositions(String skinPath) {
-        Properties props = new Properties();
+        Properties props = loadAll();
+        props.keySet().removeIf(key -> key.toString().matches("(main|lyric|eq|playlist|mini)\\.(x|y|width|height)"));
         if (skinPath != null && !skinPath.isEmpty()) {
             props.setProperty("skin", skinPath);
         }
@@ -86,11 +89,14 @@ public class WindowConfig {
     }
 
     private static void putWindow(Properties props, String key, JFrame frame) {
-        props.setProperty(key + ".x", String.valueOf(frame.getX()));
-        props.setProperty(key + ".y", String.valueOf(frame.getY()));
-        props.setProperty(key + ".width", String.valueOf(frame.getWidth()));
-        props.setProperty(key + ".height", String.valueOf(frame.getHeight()));
-        props.setProperty(key + ".visible", String.valueOf(frame.isVisible()));
+        Rectangle bounds = frame instanceof org.ttplayer.ui.LyricWindow ? ((org.ttplayer.ui.LyricWindow) frame).getNormalBounds() : frame.getBounds();
+        props.setProperty(key + ".x", String.valueOf(bounds.x));
+        props.setProperty(key + ".y", String.valueOf(bounds.y));
+        props.setProperty(key + ".width", String.valueOf(bounds.width));
+        props.setProperty(key + ".height", String.valueOf(bounds.height));
+        Object normal = frame.getRootPane().getClientProperty("mini.normalVisible");
+        Object suspended = frame.getRootPane().getClientProperty("suspended.visible");
+        props.setProperty(key + ".visible", String.valueOf(normal instanceof Boolean ? normal : suspended instanceof Boolean ? suspended : frame.isVisible()));
     }
 
     private static boolean getWindow(Properties props, String key, JFrame frame) {
@@ -111,12 +117,13 @@ public class WindowConfig {
             h = frame.getHeight();
         }
 
-        GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
-        Rectangle screen = ge.getDefaultScreenDevice().getDefaultConfiguration().getBounds();
+        Rectangle screen = MiniLyricLayout.usableBounds(new Rectangle(rx, ry, w, h));
 
         // 确保窗口大小合理（不能太小）
         w = Math.max(100, w);
         h = Math.max(50, h);
+        if (frame instanceof org.ttplayer.ui.MiniWindow) { w = frame.getWidth(); h = frame.getHeight(); }
+        else { w = Math.min(w, screen.width); h = Math.min(h, screen.height); }
 
         // 确保窗口在屏幕范围内
         rx = Math.max(screen.x, Math.min(rx, screen.x + screen.width - w));

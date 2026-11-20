@@ -35,6 +35,8 @@ public class WindowAssembler {
         hub.player.setTitle("TTPlayer");
         hub.player.setChildWindows(hub.lyric, hub.eq, hub.playlist);
         hub.player.setMiniWindow(hub.miniWindow);
+        hub.lyric.setMiniAnchor(hub.miniWindow);
+        hub.desktopLyric.setLyricSource(hub.lyric);
 
         WindowLayoutUtils.layoutBySkin(hub.player, hub.lyric, hub.eq, hub.playlist);
 
@@ -49,6 +51,7 @@ public class WindowAssembler {
         hub.playlist.setMiniWindow(hub.miniWindow);
         hub.playlist.setDesktopLyricWindow(hub.desktopLyric);
         hub.player.setPlaylistWindow(hub.playlist);
+        hub.menus.install();
 
         setupMainWindowListener();
 
@@ -62,8 +65,23 @@ public class WindowAssembler {
         hub.miniWindow.setOnExitMiniMode(() -> {
             if (hub.inMiniMode) hub.toggleMiniMode();
         });
+        hub.miniWindow.setOnMinimize(hub::hideAllWindowsToTray);
         hub.miniWindow.setOnToggleLyric(() -> {
-            if (hub.lyric != null) hub.lyric.setVisible(!hub.lyric.isVisible());
+            if (hub.lyric != null) {
+                hub.lyric.positionCompactLyrics();
+                hub.lyric.setVisible(!hub.lyric.isVisible());
+                hub.miniWindow.setLyricVisible(hub.lyric.isVisible());
+            }
+        });
+        hub.miniWindow.addComponentListener(new ComponentAdapter() {
+            @Override public void componentMoved(ComponentEvent event) { hub.lyric.positionCompactLyrics(); }
+            @Override public void componentResized(ComponentEvent event) { hub.lyric.positionCompactLyrics(); }
+        });
+        hub.lyric.addComponentListener(new ComponentAdapter() {
+            @Override public void componentShown(ComponentEvent event) {
+                hub.lyric.positionCompactLyrics(); hub.miniWindow.setLyricVisible(hub.lyric.isVisible());
+            }
+            @Override public void componentHidden(ComponentEvent event) { hub.miniWindow.setLyricVisible(hub.lyric.isVisible()); }
         });
         hub.miniWindow.setOnVolumeChanged(hub.player::setVolumeFromPercent);
         hub.miniWindow.setOnMuteChanged(() -> {
@@ -95,9 +113,11 @@ public class WindowAssembler {
     }
 
     public void setupConfigSaving() {
+        PlayerWindow originalPlayer = hub.player;
         javax.swing.Timer configSaveTimer = new javax.swing.Timer(500, e ->
-            WindowConfig.saveAll(hub.player, hub.lyric, hub.eq, hub.playlist,
-                                 hub.miniWindow, hub.inMiniMode, hub.currentSkinPath));
+            { if (hub.player == originalPlayer && originalPlayer.isDisplayable())
+                WindowConfig.saveAll(hub.player, hub.lyric, hub.eq, hub.playlist,
+                                 hub.miniWindow, hub.inMiniMode, hub.currentSkinPath); });
         configSaveTimer.setRepeats(false);
 
         ComponentAdapter configSaver = new ComponentAdapter() {
@@ -109,6 +129,10 @@ public class WindowAssembler {
         hub.lyric.addComponentListener(configSaver);
         hub.eq.addComponentListener(configSaver);
         hub.playlist.addComponentListener(configSaver);
+        hub.miniWindow.addComponentListener(configSaver);
+        originalPlayer.addWindowListener(new WindowAdapter() {
+            @Override public void windowClosed(WindowEvent event) { configSaveTimer.stop(); }
+        });
     }
 
     private void bindPlayerButtons() {

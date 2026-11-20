@@ -9,6 +9,13 @@ public class LRCLine implements Comparable<LRCLine> {
     private long timeMs;
     private String text;
     private List<LyricChar> chars;
+    private List<Word> words;
+
+    public static final class Word {
+        public final long timeMs;
+        public final String text;
+        public Word(long timeMs, String text) { this.timeMs = timeMs; this.text = text; }
+    }
 
     public LRCLine(long timeMs, String text) {
         this.timeMs = timeMs;
@@ -39,35 +46,35 @@ public class LRCLine implements Comparable<LRCLine> {
 
     public List<LyricChar> getChars() { return chars; }
     public boolean hasChars() { return chars != null && !chars.isEmpty(); }
+    public List<Word> getWords() { return words; }
 
     public void parseCharsFromEnhanced(String raw) {
-        chars = new ArrayList<>();
+        words = new ArrayList<>();
         StringBuilder clean = new StringBuilder();
-        Matcher m = Pattern.compile("([^<]*)<([0-9:.]+)>").matcher(raw);
-        int offset = 0;
-        while (m.find()) {
-            String seg = m.group(1);
-            for (int i = 0; i < seg.length(); i++) {
-                chars.add(new LyricChar(seg.charAt(i), offset, 0));
+        Matcher matcher = Pattern.compile("<(\\d+:[0-5]?\\d(?:\\.\\d+)?)>").matcher(raw);
+        long timestamp = timeMs;
+        int start = 0;
+        while (matcher.find()) {
+            String fragment = raw.substring(start, matcher.start());
+            if (!fragment.isEmpty()) {
+                words.add(new Word(timestamp, fragment));
+                clean.append(fragment);
             }
-            clean.append(seg);
-            offset += parseTimestampMs(m.group(2));
+            try { timestamp = parseTimestampMs(matcher.group(1)); }
+            catch (NumberFormatException error) { timestamp = timeMs; }
+            start = matcher.end();
         }
-        if (!chars.isEmpty()) text = clean.toString();
-        else chars = null;
+        if (start == 0) { words = null; return; }
+        String fragment = raw.substring(start);
+        if (!fragment.isEmpty()) { words.add(new Word(timestamp, fragment)); clean.append(fragment); }
+        text = clean.toString();
     }
 
-    private static int parseTimestampMs(String ts) {
-        ts = ts.trim();
-        if (ts.isEmpty()) return 0;
-        int min = 0;
-        int colon = ts.indexOf(':');
-        if (colon >= 0) {
-            min = Integer.parseInt(ts.substring(0, colon)) * 60000;
-            ts = ts.substring(colon + 1);
-        }
-        double sec = Double.parseDouble(ts);
-        return min + (int) (sec * 1000);
+    private static long parseTimestampMs(String timestamp) {
+        int colon = timestamp.indexOf(':');
+        double milliseconds = Double.parseDouble(timestamp.substring(0, colon)) * 60000 +
+                Double.parseDouble(timestamp.substring(colon + 1)) * 1000;
+        return (long) Math.max(0, Math.min(Long.MAX_VALUE, milliseconds));
     }
 
     @Override

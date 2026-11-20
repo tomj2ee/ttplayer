@@ -1,322 +1,207 @@
 package org.ttplayer.ui;
 
-
 import org.ttplayer.engine.PlayerEngine;
-import org.ttplayer.lyrics.LRCLine;
-import org.ttplayer.lyrics.LRCParser;
-import org.ttplayer.lyrics.LyricChar;
+import org.ttplayer.lyrics.*;
 import org.ttplayer.model.Song;
-import org.ttplayer.util.FontUtils;
-
+import org.ttplayer.util.*;
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.io.File;
-import java.io.IOException;
+import java.awt.event.*;
+import java.awt.geom.Rectangle2D;
+import java.io.*;
 import java.util.List;
 
-/**
- * 桌面歌词窗口 - 透明无边框，在桌面显示单行歌词
- */
 public class DesktopLyricWindow extends JWindow {
-
-    private PlayerEngine playerEngine;
+    private final PlayerEngine playerEngine;
     private List<LRCLine> lines;
     private int currentLineIndex = -1;
-    private long adjustedPositionMs = 0;
-
-    // 歌词样式
-    private Color textColor = new Color(255, 255, 255, 200);
-    private Color highlightColor = new Color(0, 255, 128);
-    private float bgAlpha = 0.3f;
+    private long playbackTimeMs, offsetMs;
     private Font lyricFont;
-
-    /**
-     * 依据歌词文本实际语言自动选择能覆盖全部字形的字体，
-     * 韩文/日文歌词不出现豆腐块。
-     */
-    private void adjustFontToLyrics() {
-        if (lines == null || lines.isEmpty()) return;
-        StringBuilder all = new StringBuilder();
-        for (org.ttplayer.lyrics.LRCLine line : lines) {
-            if (line.getText() != null) all.append(line.getText()).append('\n');
-        }
-        int size = lyricFont != null ? lyricFont.getSize() : 24;
-        lyricFont = org.ttplayer.util.FontUtils.getLyricFontByText(all.toString(), null, Font.PLAIN, size);
-    }
-
-    // 拖动相关
-    private Point dragStartScreen;
-    private Point dragStartWindow;
-
-    // 更新定时器
-    private Timer updateTimer;
-
-    // 单行/双行模式
-    private boolean singleLine = true;
+    private LyricSettings.Style style;
+    private LyricWindow source;
+    private final Timer updateTimer, saveTimer;
+    private boolean singleLine, locked, hovered;
+    private TtMenuCatalog.Actions menuActions;
 
     public DesktopLyricWindow(PlayerEngine engine) {
-        this.playerEngine = engine;
-        lyricFont = FontUtils.getLyricFont(null, Font.PLAIN, 24);
-        initUI();
-        startUpdateTimer();
-    }
-
-    private void initUI() {
-        setSize(600, 80);
+        playerEngine = engine;
+        singleLine = !MenuSettings.flag("desktopDual", false);
+        locked = MenuSettings.flag("desktopLocked", false);
         setAlwaysOnTop(true);
         setFocusableWindowState(false);
-
-
-        setBackground(new Color(0, 0, 0, 0));
-
-        JPanel panel = createPanel();
-        setContentPane(panel);
-
-        // 拖动支持
-        MouseAdapter dragAdapter = new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                dragStartScreen = e.getLocationOnScreen();
-                dragStartWindow = DesktopLyricWindow.this.getLocation();
-            }
-
-            @Override
-            public void mouseDragged(MouseEvent e) {
-                if (dragStartScreen != null && dragStartWindow != null) {
-                    Point current = e.getLocationOnScreen();
-                    int dx = current.x - dragStartScreen.x;
-                    int dy = current.y - dragStartScreen.y;
-                    DesktopLyricWindow.this.setLocation(dragStartWindow.x + dx, dragStartWindow.y + dy);
-                }
-            }
-        };
-        panel.addMouseListener(dragAdapter);
-        panel.addMouseMotionListener(dragAdapter);
-
-        // 右键菜单
-        panel.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mousePressed(MouseEvent e) {
-                if (e.isPopupTrigger()) showPopup(e);
-            }
-
-            @Override
-            public void mouseReleased(MouseEvent e) {
-                if (e.isPopupTrigger()) showPopup(e);
-            }
-        });
-
-        // 定位到屏幕底部中间
-        Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
-        setLocation((screen.width - getWidth()) / 2, screen.height - getHeight() - 60);
-    }
-
-
-    private JPanel createPanel() {
+        setBackground(new Color(0, true));
         JPanel panel = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-                int w = getWidth(), h = getHeight();
-
-                // 半透明背景
-                g2.setColor(new Color(0, 0, 0, (int) (bgAlpha * 255)));
-                g2.fillRoundRect(4, 4, w - 8, h - 8, 16, 16);
-
-                // 绘制歌词
-                drawLyrics(g2, w, h);
-
-                g2.dispose();
-            }
+            @Override protected void paintComponent(Graphics graphics) { paintLyrics((Graphics2D) graphics); }
         };
         panel.setOpaque(false);
-        return panel;
-    }
-
-    private void showPopup(MouseEvent e) {
-        JPopupMenu menu = new JPopupMenu();
-        JMenuItem closeItem = org.ttplayer.util.UIUtils.createMenuItem(
-            org.ttplayer.util.Messages.get("desktopLyric.close"),
-            org.ttplayer.util.MenuIcons.exit(),
-            ev -> setVisible(false));
-        menu.add(closeItem);
-
-        JMenuItem singleItem = org.ttplayer.util.UIUtils.createMenuItem(
-            singleLine ? org.ttplayer.util.Messages.get("desktopLyric.twoLine") : org.ttplayer.util.Messages.get("desktopLyric.oneLine"),
-            org.ttplayer.util.MenuIcons.lyric(),
-            ev -> {
-                singleLine = !singleLine;
-                int newH = singleLine ? 80 : 120;
-                setSize(getWidth(), newH);
-            });
-        menu.add(singleItem);
-        menu.show(e.getComponent(), e.getX(), e.getY());
-    }
-
-    private void drawLyrics(Graphics2D g2, int w, int h) {
-        if (lines == null || lines.isEmpty() || currentLineIndex < 0) {
-            // 没有歌词时显示提示
-            g2.setColor(textColor);
-            g2.setFont(lyricFont);
-            FontMetrics fm = g2.getFontMetrics();
-            String msg = org.ttplayer.util.Messages.get("lyric.none");
-            g2.drawString(msg, (w - fm.stringWidth(msg)) / 2, h / 2 + fm.getAscent() / 2);
-            return;
-        }
-
-        // 当前行
-        LRCLine currentLine = lines.get(currentLineIndex);
-
-        if (singleLine) {
-            drawSingleLine(g2, currentLine, w, h);
-        } else {
-            // 双行模式：显示当前行和下一行
-            LRCLine nextLine = (currentLineIndex + 1 < lines.size()) ? lines.get(currentLineIndex + 1) : null;
-            drawDualLines(g2, currentLine, nextLine, w, h);
-        }
-    }
-
-    private void drawSingleLine(Graphics2D g2, LRCLine currentLine, int w, int h) {
-        if (currentLine == null) return;
-
-        String text = currentLine.getText();
-        g2.setFont(lyricFont);
-        FontMetrics fm = g2.getFontMetrics();
-
-        if (currentLine.hasChars()) {
-            // 逐字变色
-            long lineStart = currentLine.getTimeMs();
-            long pos = adjustedPositionMs - lineStart;
-            List<LyricChar> chars = currentLine.getChars();
-
-            int totalW = fm.stringWidth(text);
-            int x = (w - totalW) / 2;
-            int y = h / 2 + fm.getAscent() / 2;
-
-            for (LyricChar lc : chars) {
-                String s = String.valueOf(lc.ch);
-                int cw = fm.stringWidth(s);
-                if (lc.startMs < pos) {
-                    g2.setColor(highlightColor);
-                } else if (lc.startMs < pos + 200) {
-                    float t = Math.max(0f, Math.min(1f, (float) (pos - lc.startMs) / 200f));
-                    g2.setColor(blend(highlightColor, textColor, t));
-                } else {
-                    g2.setColor(textColor);
-                }
-                g2.drawString(s, x, y);
-                x += cw;
+        setContentPane(panel);
+        setSize(LyricSettings.clamp(MenuSettings.number("desktop.width", 600), 96, 4096),
+                LyricSettings.clamp(MenuSettings.number("desktop.height", singleLine ? 80 : 120), 24, 1080));
+        Rectangle area = MiniLyricLayout.usableBounds(this);
+        int horizontal = MenuSettings.number("desktop.x", area.x + (area.width - getWidth()) / 2);
+        int vertical = MenuSettings.number("desktop.y", area.y + area.height - getHeight() - 60);
+        area = MiniLyricLayout.usableBounds(new Rectangle(horizontal, vertical, getWidth(), getHeight()));
+        setLocation(Math.max(area.x, Math.min(horizontal, area.x + area.width - getWidth())),
+                Math.max(area.y, Math.min(vertical, area.y + area.height - getHeight())));
+        refreshSettings();
+        MouseAdapter pointer = new MouseAdapter() {
+            private Point start, origin;
+            private Dimension size;
+            private boolean resizing;
+            @Override public void mousePressed(MouseEvent event) {
+                if (event.isPopupTrigger()) { showPopup(event); return; }
+                if (locked || !SwingUtilities.isLeftMouseButton(event)) return;
+                start = event.getLocationOnScreen(); origin = getLocation(); size = getSize();
+                resizing = event.getX() >= getWidth() - 12 && event.getY() >= getHeight() - 12;
             }
-        } else {
-            // 无逐字时间信息，整体绘制
-            int x = (w - fm.stringWidth(text)) / 2;
-            int y = h / 2 + fm.getAscent() / 2;
-            g2.setColor(highlightColor);
-            g2.drawString(text, x, y);
-        }
-    }
-
-    private void drawDualLines(Graphics2D g2, LRCLine currentLine, LRCLine nextLine, int w, int h) {
-        g2.setFont(lyricFont);
-        FontMetrics fm = g2.getFontMetrics();
-
-        // 当前行 - 高亮，在上面
-        if (currentLine != null) {
-            String text = currentLine.getText();
-            int x = (w - fm.stringWidth(text)) / 2;
-            int y = h / 3 + fm.getAscent() / 2;
-            g2.setColor(highlightColor);
-            g2.drawString(text, x, y);
-        }
-
-        // 下一行 - 暗色，在下面
-        if (nextLine != null) {
-            String text = nextLine.getText();
-            int x = (w - fm.stringWidth(text)) / 2;
-            int y = h * 2 / 3 + fm.getAscent() / 2;
-            g2.setColor(new Color(textColor.getRed(), textColor.getGreen(), textColor.getBlue(), 120));
-            g2.drawString(text, x, y);
-        }
-    }
-
-    /**
-     * 加载新的歌词
-     */
-    public void loadLyrics(Song song) {
-        if (song == null || song.filePath == null) {
-            this.lines = null;
-            this.currentLineIndex = -1;
-            repaint();
-            return;
-        }
-
-        File audioFile = new File(song.filePath);
-        File lrcFile = LRCParser.findLRCFile(audioFile);
-        if (lrcFile != null) {
-            try {
-                LRCParser parser = new LRCParser();
-                LRCParser.LRCData data = parser.parse(lrcFile);
-                this.lines = data.lines;
-                this.currentLineIndex = -1;
-                adjustFontToLyrics(); // 按歌词内容语言自动选字体
-                repaint();
-                return;
-            } catch (IOException ignored) {
+            @Override public void mouseDragged(MouseEvent event) {
+                if (locked || start == null) return;
+                Point pointer = event.getLocationOnScreen();
+                if (resizing) setSize(LyricSettings.clamp(size.width + pointer.x - start.x, 96, 4096),
+                        LyricSettings.clamp(size.height + pointer.y - start.y, 24, 1080));
+                else setLocation(origin.x + pointer.x - start.x, origin.y + pointer.y - start.y);
             }
-        }
-        this.lines = null;
-        this.currentLineIndex = -1;
+            @Override public void mouseReleased(MouseEvent event) {
+                start = null; origin = null;
+                if (event.isPopupTrigger()) showPopup(event);
+            }
+            @Override public void mouseEntered(MouseEvent event) { hovered = true; repaint(); }
+            @Override public void mouseExited(MouseEvent event) { hovered = false; repaint(); }
+            @Override public void mouseMoved(MouseEvent event) {
+                panel.setCursor(Cursor.getPredefinedCursor(!locked && event.getX() >= getWidth() - 12 &&
+                        event.getY() >= getHeight() - 12 ? Cursor.SE_RESIZE_CURSOR : Cursor.DEFAULT_CURSOR));
+            }
+        };
+        panel.addMouseListener(pointer);
+        panel.addMouseMotionListener(pointer);
+        updateTimer = new Timer(25, event -> {
+            if (playerEngine != null) setCurrentTime(playerEngine.getPositionMs());
+        });
+        saveTimer = new Timer(400, event -> {
+            MenuSettings.set("desktop.x", getX()); MenuSettings.set("desktop.y", getY());
+            MenuSettings.set("desktop.width", getWidth()); MenuSettings.set("desktop.height", getHeight());
+        });
+        saveTimer.setRepeats(false);
+        addComponentListener(new ComponentAdapter() {
+            @Override public void componentShown(ComponentEvent event) { updateTimer.start(); NativeWindowSupport.setClickThrough(DesktopLyricWindow.this, locked); }
+            @Override public void componentHidden(ComponentEvent event) { updateTimer.stop(); }
+            @Override public void componentMoved(ComponentEvent event) { saveTimer.restart(); }
+            @Override public void componentResized(ComponentEvent event) { saveTimer.restart(); }
+        });
+    }
+
+    public void setMenuActions(TtMenuCatalog.Actions actions) { menuActions = actions; }
+    public void setLyricSource(LyricWindow window) { source = window; refreshSettings(); }
+    public boolean isLocked() { return locked; }
+    public boolean isSingleLine() { return singleLine; }
+    public void toggleLocked() {
+        locked = !locked;
+        hovered = false;
+        MenuSettings.set("desktopLocked", locked);
+        NativeWindowSupport.setClickThrough(this, locked);
+        if (!locked && isVisible()) toFront();
+        repaint();
+    }
+    public void setSingleLine(boolean value) {
+        if (singleLine == value) return;
+        singleLine = value;
+        setSize(getWidth(), value ? 80 : 120);
+        MenuSettings.set("desktopDual", !value);
+        repaint();
+    }
+    public void toggleLines() { setSingleLine(!singleLine); }
+    public void setLyrics(List<LRCLine> lyrics) {
+        lines = lyrics;
+        currentLineIndex = -1;
+        adjustFont();
+        if (playerEngine != null) setCurrentTime(playerEngine.getPositionMs());
+        repaint();
+    }
+    public void setOffsetMs(long value) { offsetMs = value; setCurrentTime(playbackTimeMs); }
+    public long getOffsetMs() { return offsetMs; }
+    public int getCurrentLineIndex() { return currentLineIndex; }
+    public void setCurrentTime(long positionMs) {
+        playbackTimeMs = positionMs;
+        currentLineIndex = LyricTimeline.active(lines, positionMs, offsetMs);
         repaint();
     }
 
-    private void startUpdateTimer() {
-        updateTimer = new Timer(50, e -> {
-            if (playerEngine != null && playerEngine.isPlaying()) {
-                setCurrentTime(playerEngine.getPositionMs());
+    public void refreshSettings() {
+        style = source == null ? LyricSettings.load().desktop : source.getEffectiveStyle(true);
+        lyricFont = source == null ? FontUtils.getLyricFont(style.fontFamily(), Font.PLAIN, style.fontSize) : source.getEffectiveFont(true);
+        setSingleLine(!MenuSettings.flag("desktopDual", false));
+        adjustFont();
+        repaint();
+    }
+    private void adjustFont() {
+        if (lyricFont == null) return;
+        StringBuilder text = new StringBuilder(Messages.get("lyric.none")).append('\n');
+        if (lines != null) for (LRCLine line : lines) text.append(line.getText()).append('\n');
+        lyricFont = FontUtils.getLyricFontByText(text.toString(), lyricFont.getFamily(), Font.PLAIN, lyricFont.getSize());
+    }
+
+    private void paintLyrics(Graphics2D graphics) {
+        Graphics2D canvas = (Graphics2D) graphics.create();
+        canvas.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        canvas.setComposite(AlphaComposite.Clear);
+        canvas.fillRect(0, 0, getWidth(), getHeight());
+        canvas.setComposite(AlphaComposite.SrcOver);
+        if (!locked) {
+            canvas.setColor(new Color(0, 0, 0, 1));
+            canvas.fillRect(0, 0, getWidth(), getHeight());
+        }
+        if (!style.transparent && (style.backgroundOpacity > 0 || hovered && !locked)) {
+            canvas.setColor(LyricTextPainter.alpha(style.background, style.backgroundOpacity > 0 ? style.backgroundOpacity / 100f : 0.3f));
+            canvas.fillRoundRect(4, 4, Math.max(1, getWidth() - 8), Math.max(1, getHeight() - 8), 16, 16);
+        }
+        float rowHeight = getHeight() / (singleLine ? 1f : 2f);
+        Font font = lyricFont;
+        while (font.getSize() > 8 && canvas.getFontMetrics(font).getHeight() > rowHeight - 4)
+            font = font.deriveFont((float) (font.getSize() - 1));
+        if (currentLineIndex < 0 || lines == null || lines.isEmpty()) {
+            LyricTextPainter.paint(canvas, Messages.get("lyric.none"), new Rectangle2D.Float(12, 0, getWidth() - 24, getHeight()),
+                    font, style.normal, style.word, 0, style);
+        } else {
+            boolean karaoke = MenuSettings.flag("karaoke", true);
+            long duration = playerEngine == null ? 0 : playerEngine.getDuration() * 1000L;
+            float progress = karaoke ? LyricTimeline.progress(lines, currentLineIndex, playbackTimeMs, duration, offsetMs) : 0;
+            LyricTextPainter.paint(canvas, lines.get(currentLineIndex).getText(),
+                    new Rectangle2D.Float(12, 0, getWidth() - 24, rowHeight), font,
+                    karaoke ? style.normal : style.highlight, style.word, progress, style);
+            if (!singleLine && currentLineIndex + 1 < lines.size())
+                LyricTextPainter.paint(canvas, lines.get(currentLineIndex + 1).getText(),
+                        new Rectangle2D.Float(12, rowHeight, getWidth() - 24, rowHeight), font, style.normal, style.word, 0, style);
+        }
+        canvas.dispose();
+    }
+
+    private void showPopup(MouseEvent event) {
+        if (locked) return;
+        TtMenuCatalog.Actions actions = menuActions == null ? new TtMenuCatalog.Actions() {
+            public void execute(String action) {
+                if ("desktop_lines".equals(action)) toggleLines();
+                else if ("lock".equals(action)) toggleLocked();
+                else if ("desktop".equals(action)) setVisible(false);
+                else if ("lyric_search".equals(action) && source != null) source.searchLyricsOnline();
             }
-        });
-        updateTimer.start();
+            public boolean checked(String action) { return "lock".equals(action) ? locked : "desktop_dual".equals(action) && !singleLine; }
+        } : menuActions;
+        TtMenuCatalog.create(TtMenuCatalog.Kind.DESKTOP, actions).show(event.getComponent(), event.getX(), event.getY());
     }
 
-    private void setCurrentTime(long positionMs) {
-        if (lines == null || lines.isEmpty() || !isVisible()) return;
-
-        adjustedPositionMs = positionMs;
-        int newIndex = -1;
-        for (int i = 0; i < lines.size(); i++) {
-            LRCLine line = lines.get(i);
-            long nextTime = (i + 1 < lines.size()) ? lines.get(i + 1).getTimeMs() : Long.MAX_VALUE;
-            if (line.getTimeMs() <= adjustedPositionMs && adjustedPositionMs < nextTime) {
-                newIndex = i;
-                break;
-            }
+    public void loadLyrics(Song song) {
+        if (source != null) { setLyrics(source.getRenderer().getLyrics()); setOffsetMs(source.getOffsetMs()); return; }
+        if (song != null && song.filePath != null && MenuSettings.flag("lyric.autoLoad", true)) {
+            File local = LyricsRepository.find(song);
+            if (local != null) try {
+                LRCParser.LRCData data = new LRCParser().parse(local, MenuSettings.flag("lyric.trim", false));
+                setLyrics(data.lines); setOffsetMs(data.offsetMs); return;
+            } catch (IOException ignored) {}
         }
-        if (newIndex == -1 && !lines.isEmpty() && adjustedPositionMs >= lines.get(lines.size() - 1).getTimeMs()) {
-            newIndex = lines.size() - 1;
-        }
-
-        if (newIndex != currentLineIndex) {
-            currentLineIndex = newIndex;
-            repaint();
-        } else if (newIndex >= 0 && lines.get(newIndex).hasChars()) {
-            repaint(); // 逐字更新需要持续重绘
-        }
+        setLyrics(null); setOffsetMs(0);
     }
 
-    private Color blend(Color a, Color b, float t) {
-        return getColor(a, b, t);
-    }
-
-
-    static Color getColor(Color a, Color b, float t) {
-        int r = (int) (a.getRed() + (b.getRed() - a.getRed()) * t);
-        int g = (int) (a.getGreen() + (b.getGreen() - a.getGreen()) * t);
-        int bl = (int) (a.getBlue() + (b.getBlue() - a.getBlue()) * t);
-        return new Color(r, g, bl);
-    }
+    @Override public void addNotify() { super.addNotify(); NativeWindowSupport.setClickThrough(this, locked); }
+    @Override public void removeNotify() { if (updateTimer != null) updateTimer.stop(); super.removeNotify(); }
+    @Override public void dispose() { updateTimer.stop(); saveTimer.stop(); super.dispose(); }
 }

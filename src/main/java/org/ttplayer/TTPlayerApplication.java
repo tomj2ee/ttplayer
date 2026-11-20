@@ -1,6 +1,7 @@
 package org.ttplayer;
 
 import org.ttplayer.app.WindowHub;
+import org.ttplayer.util.AppIcons;
 import org.ttplayer.util.Messages;
 import org.ttplayer.util.UIUtils;
 import org.ttplayer.util.WindowConfig;
@@ -17,6 +18,10 @@ public class TTPlayerApplication {
     private final WindowHub hub = new WindowHub();
 
     public void start() {
+        start(new String[0]);
+    }
+
+    public void start(String[] arguments) {
         // 首先设置应用图标
         setApplicationIcon();
 
@@ -26,25 +31,21 @@ public class TTPlayerApplication {
             Messages.setLocale(Messages.fromTag(lang));
         }
 
-        // 恢复上次使用的皮肤，创建整套窗口
+        java.util.List<java.io.File> files = new java.util.ArrayList<>();
+        for (String argument : arguments) {
+            java.io.File file = new java.io.File(argument);
+            if (file.isFile()) files.add(file);
+        }
         String savedSkin = WindowConfig.restoreSkin();
         hub.createUI((savedSkin != null && !savedSkin.isEmpty())
-                ? savedSkin : WindowHub.DEFAULT_SKIN);
+                ? savedSkin : WindowHub.DEFAULT_SKIN, files.isEmpty());
+        if (!files.isEmpty()) javax.swing.SwingUtilities.invokeLater(() -> hub.fileDrop.handle(files));
     }
 
     private void setApplicationIcon() {
         try {
-            ClassLoader cl = getClass().getClassLoader();
-            java.util.List<Image> icons = UIUtils.loadApplicationIcons(cl,
-                "ico/ttplayer_16x16_32bpp.png",
-                "ico/ttplayer_32x32_32bpp.png",
-                "ico/ttplayer_48x48_32bpp.png"
-            );
-
-            if (!icons.isEmpty()) {
-                // 设置Mac的Dock图标
-                UIUtils.setMacDockIcon(icons.get(icons.size() - 1));
-            }
+            Image icon = AppIcons.getLargestImage();
+            if (icon != null) UIUtils.setMacDockIcon(icon);
         } catch (Exception ignored) {}
     }
 }

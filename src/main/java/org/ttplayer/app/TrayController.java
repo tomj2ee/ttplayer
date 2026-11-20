@@ -31,6 +31,7 @@ public class TrayController {
                 playerTray.updatePlayerWindow(hub.getPlayer());
             }
             playerTray.setOnShowMainWindow(hub::showAllWindowsFromTray);
+            playerTray.setMenuActions(hub.menus);
             playerTray.setOnLanguageChanged(locale -> hub.reloadForLanguage());
         } catch (Exception e) {
             log.error(Messages.get("tray.initFailPrefix") + e.getMessage(), e);
@@ -49,4 +50,6 @@ public class TrayController {
             playerTray.updateToolTip(text != null && !text.isEmpty() ? "TTPlayer - " + text : "TTPlayer");
         }
     }
+
+    public void remove() { if (playerTray != null) playerTray.remove(); }
 }

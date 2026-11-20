@@ -1,7 +1,9 @@
 package org.ttplayer.engine;
 
 import org.ttplayer.model.PlaylistManager;
+import org.ttplayer.model.Playlist;
 import org.ttplayer.model.Song;
+import org.ttplayer.util.MenuSettings;
 
 import org.bytedeco.javacv.FFmpegFrameGrabber;
 import org.bytedeco.javacv.Frame;
@@ -24,6 +26,13 @@ public class PlayerEngine {
 
     private PlaylistManager playlistManager;
     private int currentSongIndex = -1;
+    private Playlist playingPlaylist;
+    private int playMode = Math.max(0, Math.min(4, MenuSettings.number("playMode", 3)));
+    private boolean pauseAfterPlay = MenuSettings.flag("pauseAfterPlay", false);
+    private volatile long playbackRevision;
+    private Timer advanceTimer;
+    private int consecutiveErrors;
+    private boolean advancingAfterError;
 
     /** 图形均衡器（biquad），启用后对输出 PCM 滤波 */
     private final Equalizer equalizer = new Equalizer();
@@ -89,10 +98,26 @@ public class PlayerEngine {
     // ======================== 公共控制 ========================
 
     public void play(Song song) {
+        playFrom(song, 0);
+    }
+
+    public void playFrom(Song song, long positionMs) {
         if (song == null || song.filePath == null) return;
+        savePlaybackPosition();
         stopPlayback();
+        if (!advancingAfterError) consecutiveErrors = 0;
         currentFile = new File(song.filePath);
         currentSong = song;
+        if (playlistManager != null) {
+            for (Playlist playlist : playlistManager.getAllPlaylists()) {
+                if (playlist.songs.contains(song)) {
+                    playingPlaylist = playlist;
+                    currentSongIndex = playlist.songs.indexOf(song);
+                    break;
+                }
+            }
+        }
+        if (positionMs > 0) seekToMs(positionMs);
         startPlayback();
     }
 
@@ -105,7 +130,11 @@ public class PlayerEngine {
     }
 
     public void playPause() {
-        if (playThread == null || !playThread.isAlive()) return;
+        if (!playing || playThread == null || !playThread.isAlive()) {
+            if (currentSong != null) play(currentSong);
+            else play(0);
+            return;
+        }
         if (paused) {
             resumePlayback();
         } else {
@@ -114,6 +143,7 @@ public class PlayerEngine {
     }
 
     public void stop() {
+        if (currentSong != null) savePlaybackPosition(0);
         stopPlayback();
         currentSongIndex = -1;
         currentFile = null;
@@ -121,23 +151,76 @@ public class PlayerEngine {
     }
 
     public void previous() {
-        if (playlistManager == null || playlistManager.getCurrentPlaylist() == null) return;
-        List<Song> songs = playlistManager.getCurrentPlaylist().songs;
-        if (songs.isEmpty()) return;
-        int idx = currentSongIndex - 1;
-        if (idx < 0) idx = songs.size() - 1;
-        currentSongIndex = idx;
-        play(songs.get(idx));
+        advance(-1, false);
     }
 
     public void next() {
-        if (playlistManager == null || playlistManager.getCurrentPlaylist() == null) return;
-        List<Song> songs = playlistManager.getCurrentPlaylist().songs;
-        if (songs.isEmpty()) return;
-        int idx = currentSongIndex + 1;
-        if (idx >= songs.size()) idx = 0;
-        currentSongIndex = idx;
-        play(songs.get(idx));
+        advance(1, false);
+    }
+
+    public int getPlayMode() { return playMode; }
+    public void setPlayMode(int mode) {
+        if (mode < 0 || mode > 4) return;
+        playMode = mode;
+        MenuSettings.set("playMode", mode);
+    }
+    public boolean isPauseAfterPlay() { return pauseAfterPlay; }
+    public void setPauseAfterPlay(boolean value) {
+        pauseAfterPlay = value;
+        MenuSettings.set("pauseAfterPlay", value);
+    }
+    public Playlist getPlayingPlaylist() { return playingPlaylist; }
+    public void advanceAfterPlayback() { scheduleAdvance(false); }
+
+    public void advanceAfterError() {
+        if (PlaybackSettings.get().stopOnError) return;
+        Playlist playlist = playingPlaylist != null ? playingPlaylist : playlistManager == null ? null : playlistManager.getCurrentPlaylist();
+        if (playlist == null || ++consecutiveErrors >= playlist.songs.size()) return;
+        scheduleAdvance(true);
+    }
+
+    private void scheduleAdvance(boolean afterError) {
+        if (advanceTimer != null) advanceTimer.stop();
+        final long revision = playbackRevision;
+        Runnable action = () -> {
+            if (revision != playbackRevision) return;
+            advancingAfterError = afterError;
+            try { advance(1, true); } finally { advancingAfterError = false; }
+        };
+        int delay = PlaybackSettings.get().intervalMs;
+        if (delay == 0) action.run();
+        else {
+            advanceTimer = new Timer(delay, event -> action.run());
+            advanceTimer.setRepeats(false);
+            advanceTimer.start();
+        }
+    }
+
+    public void savePlaybackPosition() {
+        if (currentSong != null && (playing || paused)) savePlaybackPosition(getPositionMs());
+    }
+
+    private void savePlaybackPosition(long positionMs) {
+        java.util.Map<String, Object> values = new java.util.LinkedHashMap<>();
+        values.put("playback.lastPath", currentSong.filePath);
+        values.put("playback.lastPositionMs", durationUs > 0 && positionMs + 1000 >= durationUs / 1000 ? 0 : Math.max(0, positionMs));
+        MenuSettings.setAll(values);
+    }
+
+    public void shutdown() { savePlaybackPosition(); stopPlayback(); }
+
+    private void advance(int direction, boolean automatic) {
+        Playlist playlist = playingPlaylist != null ? playingPlaylist
+                : playlistManager == null ? null : playlistManager.getCurrentPlaylist();
+        if (playlist == null) return;
+        int current = playlist.songs.indexOf(currentSong);
+        int next = PlaybackPolicy.next(current, playlist.songs.size(), direction, playMode, automatic, pauseAfterPlay);
+        if (next >= 0) {
+            Song song = playlist.songs.get(next);
+            play(song);
+            playingPlaylist = playlist;
+            currentSongIndex = next;
+        } else if (automatic && listener != null) listener.onPlaybackStopped();
     }
 
     public void seekTo(int seconds) {
@@ -175,8 +258,10 @@ public class PlayerEngine {
 
     private void startPlayback() {
         if (currentFile == null || !currentFile.exists()) {
+            final long revision = playbackRevision;
             SwingUtilities.invokeLater(() -> {
-                if (listener != null) listener.onPlaybackError(org.ttplayer.util.Messages.get("player.fileNotFound"));
+                if (playbackRevision == revision && listener != null)
+                    listener.onPlaybackError(org.ttplayer.util.Messages.get("player.fileNotFound"));
             });
             return;
         }
@@ -195,6 +280,8 @@ public class PlayerEngine {
     private void decodeLoop() {
         FFmpegFrameGrabber grabber = null;
         SourceDataLine dl = null;
+        final long revision = playbackRevision;
+        boolean completed = false;
 
         try {
             grabber = new FFmpegFrameGrabber(currentFile);
@@ -202,18 +289,17 @@ public class PlayerEngine {
             grabber.setSampleRate(44100);
             grabber.setAudioChannels(2);
             grabber.start();
+            if (playbackRevision != revision || stopped) return;
+            TrackReplayGain trackGain = TrackReplayGain.read(grabber);
+            long fadeFrame = 0;
+            int openedBufferMs = PlaybackSettings.get().bufferMs;
 
             long lenUs = grabber.getLengthInTime();
             durationUs = lenUs > 0 ? lenUs : 0;
 
             AudioFormat fmt = new AudioFormat(44100, 16, 2, true, false);
             dl = (SourceDataLine) AudioSystem.getLine(new DataLine.Info(SourceDataLine.class, fmt));
-            // 显式指定音频缓冲为 ~93ms（4096 帧 × 4 字节）。
-            // 默认缓冲在 Windows 上常达 0.5s+，会让 dl.write() 长时间阻塞 ——
-            // 解码线程卡在 write 上时 vizRing 不更新，频谱观感就是「冻结后突然跳跃」。
-            // 缩小缓冲后 write 阻塞粒度变细（~20ms 一次），频谱数据供给平滑，
-            // 同时把「频谱超前于声音」的时差压到原版 DirectSound 同量级。
-            dl.open(fmt, 16384);
+            dl.open(fmt, Math.max(4, (44100 * openedBufferMs / 1000) * 4));
             dl.start();
             this.line = dl;
             applyVolume();
@@ -223,12 +309,25 @@ public class PlayerEngine {
 
             final Song startSong = currentSong;
             SwingUtilities.invokeLater(() -> {
-                if (listener != null && startSong != null) {
+                if (playbackRevision == revision && listener != null && startSong != null) {
                     listener.onPlaybackStarted(startSong);
                 }
             });
 
-            while (playing && !stopped) {
+            while (playing && !stopped && playbackRevision == revision) {
+                PlaybackSettings playbackSettings = PlaybackSettings.get();
+                if (openedBufferMs != playbackSettings.bufferMs) {
+                    dl.flush(); dl.stop(); dl.close();
+                    dl = (SourceDataLine) AudioSystem.getLine(new DataLine.Info(SourceDataLine.class, fmt));
+                    openedBufferMs = playbackSettings.bufferMs;
+                    dl.open(fmt, Math.max(4, (44100 * openedBufferMs / 1000) * 4));
+                    dl.start();
+                    this.line = dl;
+                    applyVolume();
+                    synchronized (vizLock) { vizHead = 0; vizCount = 0; }
+                    vizResetGen++;
+                    resetVisualAlign(dl);
+                }
                 if (seekRequested) {
                     try {
                         grabber.setTimestamp(seekTargetUs);
@@ -245,11 +344,12 @@ public class PlayerEngine {
                     vizResetGen++;
                     resetVisualAlign(dl);
                     seekRequested = false;
+                    fadeFrame = 0;
                     continue;
                 }
 
                 synchronized (stateLock) {
-                    while (paused && !stopped) {
+                    while (paused && !stopped && playbackRevision == revision) {
                         if (dl.isRunning()) dl.flush();
                         try { stateLock.wait(); } catch (InterruptedException e) { break; }
                         // 恢复播放：缓冲已被 flush，重设基准与环缓冲，避免旧数据残留
@@ -258,7 +358,7 @@ public class PlayerEngine {
                         applyVolume();
                     }
                 }
-                if (stopped) break;
+                if (stopped || playbackRevision != revision) break;
 
                 Frame frame = grabber.grabSamples();
                 if (frame == null) break;
@@ -269,6 +369,7 @@ public class PlayerEngine {
                 ShortBuffer sb = (ShortBuffer) sampleBuf;
                 int count = sb.remaining();
                 if (count <= 0) continue;
+                consecutiveErrors = 0;
 
                 byte[] pcm = new byte[count * 2];
                 sb.rewind();
@@ -280,6 +381,8 @@ public class PlayerEngine {
 
                 // 均衡器（启用时原地滤波）
                 equalizer.process(pcm);
+                playbackSettings.process(pcm, fadeFrame, 2, 44100, trackGain.decibels, trackGain.peak, trackGain.isTagged());
+                fadeFrame += count / 2;
 
                 // 立体声左右平均 → 单声道环缓冲（对应 C pcm_push，取滤波后数据）。
                 // 关键：必须在 dl.write() 之前入环 —— dl.write 是阻塞调用，
@@ -302,33 +405,35 @@ public class PlayerEngine {
                 if (ts > 0) {
                     positionUs = ts;
                 } else {
-                    positionUs += count * 1000000L / 44100;
+                    positionUs += (count / 2) * 1000000L / 44100;
                 }
             }
 
-            if (!stopped && playing) {
+            if (!stopped && playing && playbackRevision == revision) {
                 positionUs = durationUs;
-                SwingUtilities.invokeLater(() -> {
-                    if (listener != null) listener.onPlaybackComplete();
-                });
+                completed = true;
             }
 
         } catch (Exception e) {
             if (!stopped) {
                 SwingUtilities.invokeLater(() -> {
-                    if (listener != null) listener.onPlaybackError(org.ttplayer.util.Messages.get("player.errorPrefix") + e.getMessage());
+                    if (playbackRevision == revision && listener != null)
+                        listener.onPlaybackError(org.ttplayer.util.Messages.get("player.errorPrefix") + e.getMessage());
                 });
             }
         } finally {
-            playing = false;
+            if (playbackRevision == revision) playing = false;
             if (grabber != null) {
                 try { grabber.stop(); } catch (Exception ignored) {}
             }
             if (dl != null) {
-                try { dl.drain(); } catch (Exception ignored) {}
+                try { if (completed && !stopped && playbackRevision == revision) dl.drain(); else dl.flush(); } catch (Exception ignored) {}
                 try { dl.stop(); dl.close(); } catch (Exception ignored) {}
             }
-            this.line = null;
+            if (this.line == dl) this.line = null;
+            if (completed) SwingUtilities.invokeLater(() -> {
+                if (!stopped && playbackRevision == revision && listener != null) listener.onPlaybackComplete();
+            });
         }
     }
 
@@ -352,6 +457,8 @@ public class PlayerEngine {
     }
 
     private void stopPlayback() {
+        if (advanceTimer != null) advanceTimer.stop();
+        playbackRevision++;
         stopped = true;
         playing = false;
         paused = false;
@@ -361,6 +468,10 @@ public class PlayerEngine {
         // 连续同步执行，20ms 轮询几乎必然错过 playing=false 的瞬时窗口，
         // 只靠 isPlaying() 判断会导致「切换时旧频谱残留」。
         vizResetGen++;
+        SourceDataLine activeLine = line;
+        if (activeLine != null) {
+            try { activeLine.flush(); activeLine.stop(); activeLine.close(); } catch (Exception ignored) {}
+        }
         synchronized (stateLock) { stateLock.notifyAll(); }
         if (playThread != null) {
             playThread.interrupt();
@@ -368,7 +479,7 @@ public class PlayerEngine {
             playThread = null;
         }
         if (line != null) {
-            try { line.drain(); } catch (Exception ignored) {}
+            try { line.flush(); } catch (Exception ignored) {}
             try { line.stop(); line.close(); } catch (Exception ignored) {}
         }
         line = null;

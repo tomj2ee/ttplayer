@@ -10,7 +10,6 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
-import java.io.InputStream;
 
 public class PlayerTray {
     private static final Logger log = LoggerFactory.getLogger(PlayerTray.class);
@@ -19,6 +18,12 @@ public class PlayerTray {
     private PlayerWindow playerWindow;
     private PlayerEngine playerEngine;
     private JPopupMenu popupMenu;
+    private org.ttplayer.ui.TtMenuCatalog.Actions menuActions;
+
+    public void setMenuActions(org.ttplayer.ui.TtMenuCatalog.Actions actions) {
+        menuActions = actions;
+        createPopupMenu();
+    }
     private Runnable onSwitchSkin;
     private Runnable onShowMainWindow;
     private java.util.function.Consumer<java.util.Locale> onLanguageChanged;
@@ -119,12 +124,10 @@ public class PlayerTray {
         JWindow window = new JWindow();
         window.setAlwaysOnTop(true);
         window.setSize(1, 1);
-        window.setLocation(0, 0);
+        window.setLocation(mouseLoc);
         window.setVisible(true);
 
         // 显示菜单 - 使用鼠标屏幕位置
-        popupMenu.show(window, mouseLoc.x, mouseLoc.y);
-
         // 添加监听器，当菜单消失时 dispose window
         popupMenu.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {
             @Override
@@ -133,27 +136,21 @@ public class PlayerTray {
             @Override
             public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e) {
                 window.dispose();
+                ((JPopupMenu) e.getSource()).removePopupMenuListener(this);
             }
 
             @Override
             public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e) {
                 window.dispose();
+                ((JPopupMenu) e.getSource()).removePopupMenuListener(this);
             }
         });
+        popupMenu.show(window, 0, 0);
     }
 
     private Image loadTrayIcon() {
-        try {
-            // 尝试加载图标
-            ClassLoader cl = getClass().getClassLoader();
-            InputStream is = cl.getResourceAsStream("ico/ttplayer_16x16_32bpp.png");
-            if (is != null) {
-                return javax.imageio.ImageIO.read(is);
-            }
-        } catch (Exception e) {
-            log.error(org.ttplayer.util.Messages.get("tray.iconLoadFail"), e);
-        }
-        return createDefaultTrayIcon();
+        BufferedImage image = AppIcons.getLargestImage();
+        return image != null ? image : createDefaultTrayIcon();
     }
 
     private Image createDefaultTrayIcon() {
@@ -173,6 +170,10 @@ public class PlayerTray {
     }
 
     private void createPopupMenu() {
+        if (menuActions != null) {
+            popupMenu = org.ttplayer.ui.TtMenuCatalog.create(org.ttplayer.ui.TtMenuCatalog.Kind.TRAY, menuActions);
+            return;
+        }
         popupMenu = new JPopupMenu();
         java.awt.Font swingFont = FontUtils.getDefaultChineseFont(12);
         popupMenu.setFont(swingFont);

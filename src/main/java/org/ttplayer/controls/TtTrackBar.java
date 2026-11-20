@@ -42,6 +42,7 @@ public class TtTrackBar extends javax.swing.JComponent {
         addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
+                if (!isEnabled() || !javax.swing.SwingUtilities.isLeftMouseButton(e)) return;
                 updateValue(e.getX());
                 dragging = true;
                 lockedUntil = System.currentTimeMillis() + 1500; // 锁定1.5秒
@@ -50,6 +51,7 @@ public class TtTrackBar extends javax.swing.JComponent {
 
             @Override
             public void mouseReleased(MouseEvent e) {
+                if (!dragging || !javax.swing.SwingUtilities.isLeftMouseButton(e)) return;
                 dragging = false;
                 lockedUntil = System.currentTimeMillis() + 1500; // 锁定1.5秒
                 lockedValue = value;
@@ -59,7 +61,7 @@ public class TtTrackBar extends javax.swing.JComponent {
         addMouseMotionListener(new MouseAdapter() {
             @Override
             public void mouseDragged(MouseEvent e) {
-                updateValue(e.getX());
+                if (dragging) { updateValue(e.getX()); lockedValue = value; }
             }
         });
     }
@@ -84,7 +86,14 @@ public class TtTrackBar extends javax.swing.JComponent {
         }
     }
 
-    public void setRange(int max) { this.max = max; }
+    public void setRange(int max) { this.max = Math.max(1, max); }
+    public void reset(int maximum, int position) {
+        dragging = false;
+        lockedUntil = 0;
+        lockedValue = -1;
+        setRange(maximum);
+        setValue(position);
+    }
     public void setValue(int val) {
         if (!dragging && System.currentTimeMillis() > lockedUntil) {
             this.value = Math.max(0, Math.min(max, val));

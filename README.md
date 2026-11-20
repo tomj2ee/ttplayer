@@ -46,14 +46,21 @@
 
 - **音频播放** — 基于 JavaCV（FFmpeg）解码 + `javax.sound` 输出，支持 MP3、FLAC、WAV、OGG 等多种格式，毫秒级 seek
 - **播放列表** — 添加歌曲、拖放播放、上一首/下一首、播放列表持久化（自动保存/恢复）；支持 `PlayList.xml` 七色配置（`Color_Text/Hilight/Bkgnd/Number/Duration/Select/Bkgnd2`），序号、歌名、时长分色分段显示，隔行背景，歌名过长自动省略号；左右列表**可拖动分割条**调节宽度
-- **同步歌词** — 独立歌词窗口，完全移植 c_ttplayer 渲染模型（当前行恒居中、距中心渐隐、卡拉OK 逐字高亮、行距随窗口自适应）；拖动歌词预览中心线与时间徽标，**释放即 seek 到目标行**；支持 `Lyric.xml` 的 `TextColor/HilightColor/BkgndColor/HilightWordColor` 配色
-- **在线搜词** — 对接在线歌词接口，自动搜索并保存歌词到歌曲同目录；antd 风格搜索对话框（列表、专辑列、双击下载）
+- **同步歌词** — 按 C 语言版绘制旋转唱片、唱臂和自适应歌词布局；支持普通/逐字 LRC、180ms 平滑滚动、点击与拖动后毫秒定位、皮肤配色；歌词窗口和桌面歌词可分别设置字体、颜色、对齐、行距、阴影、描边、渐隐与不透明度，支持三种滚动方式
+- **在线搜词** — 对接在线歌词接口，支持自动搜索、取消和手工载入；按 C 版路径哈希缓存到 `~/.ttplayer/lyrics/`，可关联歌曲同目录 LRC，不覆盖已有歌词，目录不可写时仍可使用缓存；搜索对话框支持专辑列和双击下载
 - **皮肤系统** — 完整的 .skn 皮肤加载，内置 60+ 款经典皮肤；拖入 .skn 文件可直接换肤；控件支持 `align` 组合对齐（`top+left` / `center+middle` / `fill` 拉伸等），窗口缩放时控件随尺寸重定位
 - **均衡器** — 10 段图形均衡器（biquad），**启用开关 + 杜比环绕 + 13 种预设分类**（流行/摇滚/金属/电子…右键菜单选择），参数持久化下次恢复
-- **频谱可视化** — 移植自 c_ttplayer 的 **8 种频谱模式**：柱状 / 波形 / 镜像柱 / 粒子 / 折线 / 面积 / 雷达 / LED 点阵，实时 FFT（RDFT），30fps 刷新
-- **迷你模式** — 紧凑的迷你播放器，常驻屏幕右上角，可自定义皮肤（`mini_window` 配置）
-- **多语言** — 中文 / English / 日本語 / 한국어 / Deutsch 界面切换（主菜单 / 选项 / 托盘菜单 → 语言）
-- **自定义控件** — 皮肤驱动的按钮、滑块、滚动条、LED 数字显示等；歌词搜索 / 皮肤选择对话框均为 antd（Ant Design）风格
+- **频谱可视化** — 移植自 C 语言版本的 **7 种频谱模式**：经典频谱 / 原版示波器 / 原版 GOOM 星空 / 粒子与变化波形 / 32 段 / 渐变曲线 / 镜像，双声道 2048 点 FFT；支持 10–40 FPS、自定义配色、波形消逝和名称标签
+- **迷你模式** — 皮肤播放控制、进度/音量/静音、歌曲信息轮播、LED 已播放/剩余时间；伴随单行歌词在窗口旁自动选边、随 mini 移动，可拖动/滚轮定位并记住尺寸；返回完整模式恢复各窗口原有位置和显隐状态，托盘恢复保持当前模式
+- **LED 时间显示** — 同步 C 版的 12 格皮肤数字绘制：右对齐、超宽横向压缩、负号独立且不挤压数字；支持三位及更长总分钟数，保留皮肤原始高度，缺图回退文本；左键切换已播放/剩余时间，主窗口与 mini 共享状态，暂停和停止时同步刷新
+- **应用图标** — 同步 C 版修复后的高清透明 PNG、ICO 和 ICNS，窗口共用 16–1024px 原生多尺寸图标；托盘直接使用 C 版最高 1024×1024px 原图，由系统自动缩放；Dock、换肤和语言切换不再降级为低分辨率图标
+- **系统选项** — `F10` 或主菜单/托盘打开 C 版八页设置：系统、播放、格式转换、皮肤、视觉效果、歌词秀、系统关联、关于；自绘侧栏、卡片、按钮、勾选框、滑块与滚动条，修改即时生效并保存；支持启动播放/续播、错误处理、曲间间隔、缓冲、淡入和读取 ReplayGain 标签防削波；后台转换 FLAC/WAV/OGG/Opus/M4A/AAC，支持进度、取消和跳过已有文件，保留源文件；Windows 仅注册当前用户的音频格式，默认播放器由系统确认，不修改其他播放器注册，macOS 关联要求 .app 安装
+- **歌词设置入口** — 系统选项中的“歌词秀”或 `Ctrl+Shift+L`；`+/-` 调整当前歌曲歌词偏移（每次 100ms，按歌曲保存），支持拖入和导出 LRC；`F9` 切换 mini，`F5/F6` 切换歌词/桌面歌词，`Ctrl+L` 锁定/解锁桌面歌词（Windows 使用原生鼠标穿透）
+- **多语言** — 中文 / English / 日本語 / 한국어 / Deutsch 界面切换（主菜单 → 语言）
+- **C 风格菜单** — 主菜单、列表左右键菜单、歌词、桌面歌词、均衡器、迷你窗口和托盘共用 C 语言版菜单目录与矢量图标；自绘青绿色品牌栏、24px 菜单行、浅蓝选中框、勾选与子菜单箭头；长菜单支持滚轮、悬停箭头和键盘滚动
+- **菜单功能** — 五种播放模式与播放后暂停、本地 LRC 加载、卡拉 OK、封面、桌面歌词锁定/单双行、13 种 EQ 预设、三种全屏显示、文件属性/位置、全选/反选、恢复布局、音量/透明度/置顶；设置保存在 `~/.ttplayer/menus.properties`
+- **播放增益** — 按 C 版 RMS 算法扫描 ReplayGain，确认后无重新编码地更新标签，写入前校验文件状态，失败保留原文件，不支持安全写入的容器会拒绝更新
+- **自定义控件** — 皮肤驱动的按钮、滑块、滚动条、LED 数字显示等；歌词搜索对话框为 antd（Ant Design）风格，皮肤选择统一使用系统选项的“皮肤”页
 
 ## 技术栈
 
@@ -135,12 +142,12 @@ mvn clean package -Djavacpp.platform=linux-arm64
 ## 使用说明
 
 1. **添加歌曲** — 点击播放列表工具栏"添加"，选择文件或文件夹；也可直接从 Finder/资源管理器拖入歌曲播放
-2. **切换皮肤** — 主菜单 → 皮肤；或直接拖入 `.skn` 文件
+2. **切换皮肤** — 主菜单或托盘的“皮肤选择”直接打开系统选项 → 皮肤，共用一个设置窗口；也可直接拖入 `.skn` 文件
 3. **歌词** — 点击歌词按钮打开歌词窗口；右键搜索在线歌词；**拖动歌词行可预览并 seek**（松手跳到目标时间）
 4. **播放列表** — 拖动左右列表之间的**分隔条**调节歌曲/列表显示宽度；悬停高亮
 5. **迷你模式** — 在播放列表工具栏中切换到迷你模式
 6. **均衡器** — 点击均衡器按钮；**右键菜单**可启用均衡器 / 杜比环绕 / 选择 13 种预设分类，参数自动保存
-7. **频谱** — 点击频谱区域可在 8 种模式（柱状/波形/镜像/粒子/折线/面积/雷达/LED）间循环切换
+7. **频谱** — 单击切换 C 版的 7 种效果；右键选择模式或打开“视觉效果设置”，调整刷新率、配色、粗频带、波形消逝和名称字体。双击进入全屏，`Esc` / `F11` 退出，方向键切换效果。主窗口与迷你窗口共享设置，自动保存到 `~/.ttplayer/visual.properties`；关闭自定义配色后各窗口继续跟随各自皮肤
 8. **语言** — 主菜单或托盘菜单 → 语言 → 中文 / English / 日本語 / 한국어 / Deutsch
 
 ## 项目结构
@@ -177,9 +184,8 @@ src/main/java/org/ttplayer/
 │   ├── PlaylistWindow.java      # 播放列表窗口（分隔条 / 七色列表）
 │   ├── MiniWindow.java          # 迷你播放器窗口（皮肤驱动）
 │   ├── DesktopLyricWindow.java  # 桌面歌词
-│   ├── SkinSelectDialog.java    # 皮肤选择对话框（antd 按钮）
+│   ├── SystemOptionsDialog.java # 系统选项（含统一的皮肤选择页）
 │   ├── LyricSearchDialog.java   # 在线歌词搜索对话框（antd 风格）
-│   ├── SongDownloadDialog.java  # 歌曲搜索/下载对话框
 │   └── controls/                # 皮肤驱动的自定义控件
 │       ├── TtButton / TtHSlider / TtVSlider / TtTrackBar
 │       ├── TtVolumeBar / TtScrollbar / TtToolbar / TtLed
@@ -187,7 +193,7 @@ src/main/java/org/ttplayer/
 │       └── VirtualList.java     # 虚拟列表（Scrollable、分段颜色、省略号）
 ├── audio/
 │   ├── TtRdft.java              # 实数 FFT（等价 FFmpeg AV_TX_FLOAT_RDFT）
-│   ├── TtVisualizer.java        # 频谱可视化（8 种模式，移植自 c_ttplayer）
+│   ├── TtVisualizer.java        # 频谱可视化（7 种模式，移植自 C 版本）
 ├── util/
 │   ├── Messages.java            # 国际化消息（中英资源包）
 │   ├── SnapUtils.java           # 窗口边缘吸附（内部拖拽语义识别）
@@ -237,10 +243,13 @@ The UI supports **Chinese / English / 日本語 / 한국어 / Deutsch switching*
 - **Online Lyrics** — online lyric API search & download to the song directory; antd-styled search dialog
 - **Skins** — full .skn loading, 60+ classic skins; drag a `.skn` to switch; control `align` combos (`top+left`, `center+middle`, `fill` stretch) for responsive resizing
 - **Equalizer** — 10-band biquad EQ with **enable toggle, Dolby surround, 13 presets** via right-click menu; settings persist across restarts
-- **Spectrum** — **8 visualization modes** ported from c_ttplayer (bars / wave / mirror / particles / line / area / radar / LED), real-time FFT (RDFT) at ~30fps
+- **Spectrum** — **7 modes** ported from the C version (classic spectrum / original oscilloscope / original GOOM starfield / particles and changing scope / 32 bands / gradient graph / mirror), stereo 2048-point FFT, 10–40 FPS, custom colors, waveform fading, and name labels
 - **Mini Mode** — a compact mini player pinned to the top-right of the screen, skin-configurable
+- **LED Time** — C-style 12-cell skin sprites with right alignment, horizontal fitting and an independent minus sign; unlimited total-minute digits, original skin height and a text fallback. Left-click toggles shared elapsed/remaining time across main and mini windows, including pause/stop updates
+- **Application Icons** — repaired C-version transparent PNG, ICO and ICNS assets with native 16–1024px window images; the tray uses the highest-resolution 1024×1024px C-version source with automatic system scaling, while Dock, skin changes and language reloads retain high-resolution icons
+- **System Options** — C-style eight-page settings via F10 or the main/tray menu, with custom-painted navigation and controls; live playback, visualization and lyric settings, startup/resume, error policy, interval/buffer/fade and tagged ReplayGain with clipping protection. Background FLAC/WAV/OGG/Opus/M4A/AAC conversion supports progress, cancellation and safe source preservation. File associations register only the current Windows user, leaving default confirmation to the OS; macOS associations require a packaged .app
 - **i18n** — switch UI language between 中文 / English / 日本語 / 한국어 / Deutsch (Main menu / tray → Language)
-- **Custom Controls** — skin-driven buttons, sliders, scrollbars, LED digits, etc.; dialog suites styled with Ant Design
+- **Custom Controls** — skin-driven buttons, sliders, scrollbars, LED digits, etc.; lyric search uses Ant Design styling, while skin selection shares the System Options skin page
 
 ## Tech Stack
 
@@ -320,12 +329,12 @@ Skins (`src/main/resources/skin/*.skn`) and icons are bundled into the jar and r
 ## Usage
 
 1. **Add songs** — use the playlist toolbar "Add" button, or drag files/folders from Finder/Explorer onto any window
-2. **Switch skin** — Main Menu → Skin; or drag a `.skn` file onto the player
+2. **Switch skin** — Main Menu or Tray → Choose Skin opens System Options → Skins in the shared settings window; or drag a `.skn` file onto the player
 3. **Lyrics** — click the lyrics button; right-click to search online lyrics; **drag a lyric line to preview and release to seek** to that time
 4. **Playlist** — drag the **splitter** between list panes to resize; stays highlighted on hover
 5. **Mini mode** — switch in the playlist toolbar
 6. **Equalizer** — click the equalizer button; **right-click** to toggle EQ / Dolby surround / pick one of 13 presets (persisted)
-7. **Spectrum** — click the spectrum area to cycle 8 modes (bars/wave/mirror/particles/line/area/radar/LED)
+7. **Spectrum** — click to cycle the 7 C modes; right-click to select a mode or open visualization settings (FPS, colors, wide bands, fading, name and font). Double-click for fullscreen; `Esc` / `F11` exit, arrow keys switch effects. Main and mini views share settings, saved automatically to `~/.ttplayer/visual.properties`; disabling custom styling restores each view's skin colors
 8. **Language** — Main menu or tray menu → Language → 中文 / English / 日本語 / 한국어 / Deutsch
 
 ## Project Structure
@@ -356,11 +365,12 @@ src/main/java/org/ttplayer/
 │   ├── EqualizerWindow.java     # EQ window (right-click menu/presets)
 │   ├── PlaylistWindow.java      # Playlist (splitter, seven-color rows)
 │   ├── MiniWindow / DesktopLyricWindow
-│   ├── SkinSelectDialog / LyricSearchDialog / SongDownloadDialog
+│   ├── SystemOptionsDialog.java # Shared settings, including skin selection
+│   ├── LyricSearchDialog
 │   └── controls/                # Skin custom controls + VirtualList (Scrollable)
 ├── audio/
 │   ├── TtRdft.java              # Real FFT (FFmpeg AV_TX_FLOAT_RDFT equivalent)
-│   └── TtVisualizer.java        # 8 visualization modes (C port)
+│   └── TtVisualizer.java        # 7 visualization modes (C port)
 ├── util/                        # Messages / SnapUtils / ColorUtils / FontUtils / UIUtils / WindowConfig / WindowLayoutUtils
 └── lyrics/
     ├── LRCParser / LRCLine / LyricChar / SongResult

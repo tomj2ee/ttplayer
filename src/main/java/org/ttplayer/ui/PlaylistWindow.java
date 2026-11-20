@@ -11,6 +11,7 @@ import org.ttplayer.model.Song;
 import org.ttplayer.skin.TtSkin;
 import org.ttplayer.util.FontUtils;
 import org.ttplayer.util.Messages;
+import org.ttplayer.util.MenuSettings;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
@@ -27,7 +28,7 @@ import java.util.Locale;
 /**
  * 播放列表窗口 — playlist_window
  */
-public class PlaylistWindow extends SkinWindow {
+public class PlaylistWindow extends SkinWindow implements TtMenuCatalog.Actions {
 
     public TtButton btnClose;
     public TtToolbar toolbar;
@@ -372,278 +373,48 @@ public class PlaylistWindow extends SkinWindow {
         return toolbar;
     }
 
+    private TtMenuCatalog.Actions menuActions;
+
+    public void setMenuActions(TtMenuCatalog.Actions actions) { menuActions = actions; }
+
+    @Override
+    public void execute(String action) {
+        if (menuActions != null) menuActions.execute(action);
+        else performMenuAction(action);
+    }
+
+    @Override
+    public boolean checked(String action) {
+        if (action.startsWith("list:")) {
+            int index = Integer.parseInt(action.substring(5));
+            return playlistManager != null && index < playlistManager.getAllPlaylists().size()
+                    && playlistManager.getAllPlaylists().get(index) == playlistManager.getCurrentPlaylist();
+        }
+        return menuActions != null && menuActions.checked(action);
+    }
+
+    @Override
+    public boolean enabled(String action) {
+        boolean hasList = playlistManager != null && playlistManager.getCurrentPlaylist() != null;
+        if (java.util.Arrays.asList("delete", "delete_other", "batch_info", "properties", "open_file_location", "replaygain_scan", "replaygain_update").contains(action))
+            return hasList && listRight != null && listRight.getSelectedIndices().length > 0;
+        return menuActions == null || menuActions.enabled(action);
+    }
+
+    @Override
+    public String[] playlists() {
+        return playlistManager == null ? new String[0] : playlistManager.getAllPlaylists().stream()
+                .map(list -> list.name).toArray(String[]::new);
+    }
+
     private void createMenus() {
-        addMenu = new JPopupMenu();
-        populateAddMenu(addMenu);
-
-        delMenu = new JPopupMenu();
-        populateDelMenu(delMenu);
-
-        sortMenu = new JPopupMenu();
-        populateSortMenu(sortMenu);
-
-        findMenu = new JPopupMenu();
-        populateFindMenu(findMenu);
-
-        modeMenu = new JPopupMenu();
-        populateModeMenu(modeMenu, true);
-
-        optMenu = new JPopupMenu();
-        populateOptMenu(optMenu);
-
-        mainMenu = new JPopupMenu();
-        populateMainMenu(mainMenu);
-    }
-
-    /**
-     * 填充"添加"子菜单
-     */
-    private void populateAddMenu(JPopupMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.addFile"), org.ttplayer.util.MenuIcons.addFile(), e -> doAddFile()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.addFolder"), org.ttplayer.util.MenuIcons.addFolder(), e -> doAddFolder()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.addUrl"), org.ttplayer.util.MenuIcons.addUrl(), e -> doAddUrl()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.addSearchResult"), org.ttplayer.util.MenuIcons.addSearch(), e -> doAddSearchResult()));
-    }
-
-    /**
-     * 填充"添加"子菜单（JMenu版本）
-     */
-    private void populateAddMenu(JMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.addFile"), org.ttplayer.util.MenuIcons.addFile(), e -> doAddFile()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.addFolder"), org.ttplayer.util.MenuIcons.addFolder(), e -> doAddFolder()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.addUrl"), org.ttplayer.util.MenuIcons.addUrl(), e -> doAddUrl()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.addSearchResult"), org.ttplayer.util.MenuIcons.addSearch(), e -> doAddSearchResult()));
-    }
-
-    /**
-     * 填充"删除"子菜单
-     */
-    private void populateDelMenu(JPopupMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.deleteSelected"), org.ttplayer.util.MenuIcons.delSelected(), e -> doDeleteSelected()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.deleteNotSelected"), org.ttplayer.util.MenuIcons.delete(), e -> doDeleteNotSelected()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.deleteDuplicates"), org.ttplayer.util.MenuIcons.delDup(), e -> doDeleteDuplicates()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.clearList"), org.ttplayer.util.MenuIcons.clearList(), e -> doClearList()));
-    }
-
-    /**
-     * 填充"删除"子菜单（JMenu版本）
-     */
-    private void populateDelMenu(JMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.deleteSelected"), org.ttplayer.util.MenuIcons.delSelected(), e -> doDeleteSelected()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.deleteNotSelected"), org.ttplayer.util.MenuIcons.delete(), e -> doDeleteNotSelected()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.deleteDuplicates"), org.ttplayer.util.MenuIcons.delDup(), e -> doDeleteDuplicates()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.clearList"), org.ttplayer.util.MenuIcons.clearList(), e -> doClearList()));
-    }
-
-    /**
-     * 填充"排序"子菜单
-     */
-    private void populateSortMenu(JPopupMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.sortByTitle"), org.ttplayer.util.MenuIcons.sortTitle(), e -> doSortByField("title")));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.sortByArtist"), org.ttplayer.util.MenuIcons.sortArtist(), e -> doSortByField("artist")));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.sortByFilename"), org.ttplayer.util.MenuIcons.sortFile(), e -> doSortByField("filename")));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.sortByPath"), org.ttplayer.util.MenuIcons.sortPath(), e -> doSortByField("path")));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.reverse"), org.ttplayer.util.MenuIcons.reverse(), e -> doReverse()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.randomSort"), org.ttplayer.util.MenuIcons.randomSort(), e -> doRandomSort()));
-    }
-
-    /**
-     * 填充"排序"子菜单（JMenu版本）
-     */
-    private void populateSortMenu(JMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.sortByTitle"), org.ttplayer.util.MenuIcons.sortTitle(), e -> doSortByField("title")));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.sortByArtist"), org.ttplayer.util.MenuIcons.sortArtist(), e -> doSortByField("artist")));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.sortByFilename"), org.ttplayer.util.MenuIcons.sortFile(), e -> doSortByField("filename")));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.sortByPath"), org.ttplayer.util.MenuIcons.sortPath(), e -> doSortByField("path")));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.reverse"), org.ttplayer.util.MenuIcons.reverse(), e -> doReverse()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.randomSort"), org.ttplayer.util.MenuIcons.randomSort(), e -> doRandomSort()));
-    }
-
-    /**
-     * 填充"查找"子菜单
-     */
-    private void populateFindMenu(JPopupMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.findDot"), org.ttplayer.util.MenuIcons.find(), e -> doFind()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.findNext"), org.ttplayer.util.MenuIcons.findNext(), e -> doFindNext()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.locateCurrent"), org.ttplayer.util.MenuIcons.locate(), e -> doLocateCurrent()));
-    }
-
-    /**
-     * 填充"查找"子菜单（JMenu版本）
-     */
-    private void populateFindMenu(JMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.findDot"), org.ttplayer.util.MenuIcons.find(), e -> doFind()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.findNext"), org.ttplayer.util.MenuIcons.findNext(), e -> doFindNext()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.locateCurrent"), org.ttplayer.util.MenuIcons.locate(), e -> doLocateCurrent()));
-    }
-
-    /**
-     * 填充"模式"子菜单
-     */
-    private void populateModeMenu(JPopupMenu menu, boolean initializeModeItems) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        if (initializeModeItems) {
-            modeItems = new JCheckBoxMenuItem[5];
-        }
-        String[] modes = {org.ttplayer.util.Messages.get("mode.sequential"), org.ttplayer.util.Messages.get("mode.loop"), org.ttplayer.util.Messages.get("mode.single"), org.ttplayer.util.Messages.get("mode.random")};
-        javax.swing.Icon[] modeIcons = {org.ttplayer.util.MenuIcons.modeSequential(), org.ttplayer.util.MenuIcons.modelLoop(), org.ttplayer.util.MenuIcons.modeSingle(), org.ttplayer.util.MenuIcons.modeRandom()};
-        for (int i = 0; i < modes.length; i++) {
-            final int mi = i;
-            if (initializeModeItems) {
-                modeItems[i] = org.ttplayer.util.UIUtils.createCheckBoxMenuItem(modes[i], modeIcons[i], i == 0);
-            } else {
-                JCheckBoxMenuItem item = org.ttplayer.util.UIUtils.createCheckBoxMenuItem(modes[i], modeIcons[i], modeItems[i] != null && modeItems[i].isSelected());
-                item.addActionListener(e -> doSelectMode(mi));
-                menu.add(item);
-                continue;
-            }
-            modeItems[i].addActionListener(e -> doSelectMode(mi));
-            menu.add(modeItems[i]);
-        }
-        menu.addSeparator();
-        if (initializeModeItems) {
-            modeItems[4] = org.ttplayer.util.UIUtils.createCheckBoxMenuItem(org.ttplayer.util.Messages.get("menu.pauseAfterPlay"), org.ttplayer.util.MenuIcons.pauseAfter(), false);
-        } else {
-            JCheckBoxMenuItem pauseItem = org.ttplayer.util.UIUtils.createCheckBoxMenuItem(org.ttplayer.util.Messages.get("menu.pauseAfterPlay"), org.ttplayer.util.MenuIcons.pauseAfter(), modeItems[4] != null && modeItems[4].isSelected());
-            pauseItem.addActionListener(e -> doTogglePauseAfterPlay());
-            menu.add(pauseItem);
-            return;
-        }
-        modeItems[4].addActionListener(e -> doTogglePauseAfterPlay());
-        menu.add(modeItems[4]);
-    }
-
-    /**
-     * 填充"模式"子菜单（JMenu版本）
-     */
-    private void populateModeMenu(JMenu menu, boolean initializeModeItems) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        if (initializeModeItems) {
-            modeItems = new JCheckBoxMenuItem[5];
-        }
-        String[] modes = {org.ttplayer.util.Messages.get("mode.sequential"), org.ttplayer.util.Messages.get("mode.loop"), org.ttplayer.util.Messages.get("mode.single"), org.ttplayer.util.Messages.get("mode.random")};
-        javax.swing.Icon[] modeIcons = {org.ttplayer.util.MenuIcons.modeSequential(), org.ttplayer.util.MenuIcons.modelLoop(), org.ttplayer.util.MenuIcons.modeSingle(), org.ttplayer.util.MenuIcons.modeRandom()};
-        for (int i = 0; i < modes.length; i++) {
-            final int mi = i;
-            if (initializeModeItems) {
-                modeItems[i] = org.ttplayer.util.UIUtils.createCheckBoxMenuItem(modes[i], modeIcons[i], i == 0);
-            } else {
-                JCheckBoxMenuItem item = org.ttplayer.util.UIUtils.createCheckBoxMenuItem(modes[i], modeIcons[i], modeItems[i] != null && modeItems[i].isSelected());
-                item.addActionListener(e -> doSelectMode(mi));
-                menu.add(item);
-                continue;
-            }
-            modeItems[i].addActionListener(e -> doSelectMode(mi));
-            menu.add(modeItems[i]);
-        }
-        menu.addSeparator();
-        if (initializeModeItems) {
-            modeItems[4] = org.ttplayer.util.UIUtils.createCheckBoxMenuItem(org.ttplayer.util.Messages.get("menu.pauseAfterPlay"), org.ttplayer.util.MenuIcons.pauseAfter(), false);
-        } else {
-            JCheckBoxMenuItem pauseItem = org.ttplayer.util.UIUtils.createCheckBoxMenuItem(org.ttplayer.util.Messages.get("menu.pauseAfterPlay"), org.ttplayer.util.MenuIcons.pauseAfter(), modeItems[4] != null && modeItems[4].isSelected());
-            pauseItem.addActionListener(e -> doTogglePauseAfterPlay());
-            menu.add(pauseItem);
-            return;
-        }
-        modeItems[4].addActionListener(e -> doTogglePauseAfterPlay());
-        menu.add(modeItems[4]);
-    }
-
-    /**
-     * 填充"选项"子菜单
-     */
-    private void populateOptMenu(JPopupMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.playlistOptions"), org.ttplayer.util.MenuIcons.settings(), e -> doPlaylistOptions()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.batchFileInfo"), org.ttplayer.util.MenuIcons.info(), e -> doBatchInfo()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.filenameFormat"), org.ttplayer.util.MenuIcons.edit(), e -> doFileNameFormat()));
-        menu.addSeparator();
-        addLanguageMenu(menu);
-    }
-
-    private void addLanguageMenu(javax.swing.JComponent menu) {
-        JMenu langMenu = new JMenu(org.ttplayer.util.Messages.get("menu.language"));
-        langMenu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        langMenu.setIcon(org.ttplayer.util.MenuIcons.language());
-        ButtonGroup group = new ButtonGroup();
-        String currentTag = org.ttplayer.util.Messages.getLocale().toString();
-        for (String[] lang : org.ttplayer.util.Messages.SUPPORTED_LANGUAGES) {
-            JRadioButtonMenuItem item = new JRadioButtonMenuItem(lang[1], lang[0].equals(currentTag));
-            item.setIcon(org.ttplayer.util.Flags.iconFor(lang[0]));
-            item.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-            item.addActionListener(e -> changeLanguage(org.ttplayer.util.Messages.fromTag(lang[0])));
-            group.add(item);
-            langMenu.add(item);
-        }
-        menu.add(langMenu);
-    }
-
-    /**
-     * 填充"选项"子菜单（JMenu版本）
-     */
-    private void populateOptMenu(JMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.playlistOptions"), org.ttplayer.util.MenuIcons.settings(), e -> doPlaylistOptions()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.batchFileInfo"), org.ttplayer.util.MenuIcons.info(), e -> doBatchInfo()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.filenameFormat"), org.ttplayer.util.MenuIcons.edit(), e -> doFileNameFormat()));
-        menu.addSeparator();
-        addLanguageMenu(menu);
-    }
-
-    /**
-     * 填充"主菜单"子菜单
-     */
-    private void populateMainMenu(JPopupMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.skin"), org.ttplayer.util.MenuIcons.skin(), e -> doSkin()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.options_"), org.ttplayer.util.MenuIcons.options(), e -> doOptions()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.lyricShow"), org.ttplayer.util.MenuIcons.lyric(), e -> doToggleLyric()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.equalizer"), org.ttplayer.util.MenuIcons.equalizer(), e -> doToggleEqualizer()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.desktopLyric"), org.ttplayer.util.MenuIcons.desktopLyric(), e -> doToggleDesktopLyric()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.miniMode"), org.ttplayer.util.MenuIcons.miniMode(), e -> doMiniMode()));
-        menu.addSeparator();
-        addLanguageMenu(menu);
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.about"), org.ttplayer.util.MenuIcons.about(), e -> doAbout()));
-    }
-
-    /**
-     * 填充"主菜单"子菜单（JMenu版本）
-     */
-    private void populateMainMenu(JMenu menu) {
-        menu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.skin"), org.ttplayer.util.MenuIcons.skin(), e -> doSkin()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.options_"), org.ttplayer.util.MenuIcons.options(), e -> doOptions()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.lyricShow"), org.ttplayer.util.MenuIcons.lyric(), e -> doToggleLyric()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.equalizer"), org.ttplayer.util.MenuIcons.equalizer(), e -> doToggleEqualizer()));
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.desktopLyric"), org.ttplayer.util.MenuIcons.desktopLyric(), e -> doToggleDesktopLyric()));
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.miniMode"), org.ttplayer.util.MenuIcons.miniMode(), e -> doMiniMode()));
-        menu.addSeparator();
-        addLanguageMenu(menu);
-        menu.addSeparator();
-        menu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.about"), org.ttplayer.util.MenuIcons.about(), e -> doAbout()));
+        addMenu = TtMenuCatalog.create(TtMenuCatalog.Kind.ADD, this);
+        delMenu = TtMenuCatalog.create(TtMenuCatalog.Kind.DELETE, this);
+        sortMenu = TtMenuCatalog.create(TtMenuCatalog.Kind.SORT, this);
+        findMenu = TtMenuCatalog.create(TtMenuCatalog.Kind.FIND, this);
+        modeMenu = TtMenuCatalog.create(TtMenuCatalog.Kind.MODE, this);
+        optMenu = TtMenuCatalog.create(TtMenuCatalog.Kind.OPTIONS, this);
+        mainMenu = TtMenuCatalog.create(TtMenuCatalog.Kind.MAIN, this);
     }
 
     @Override
@@ -697,6 +468,7 @@ public class PlaylistWindow extends SkinWindow {
 
     private void createDivider() {
         divider = new JPanel();
+        divider.putClientProperty("innerDrag", Boolean.TRUE);
         divider.setOpaque(true);
         divider.setBackground(new Color(0, 0, 0, 70));
         divider.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.E_RESIZE_CURSOR));
@@ -735,20 +507,7 @@ public class PlaylistWindow extends SkinWindow {
 
     // ===== 左侧播放列表菜单 =====
     private void createPlaylistMenu() {
-        playlistMenu = new JPopupMenu();
-        playlistMenu.setFont(org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-        playlistMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.switchList"), org.ttplayer.util.MenuIcons.switchList(), e -> doSwitchList()));
-        playlistMenu.addSeparator();
-        playlistMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.newList"), org.ttplayer.util.MenuIcons.newList(), e -> doNewList()));
-        playlistMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.addList"), org.ttplayer.util.MenuIcons.addList(), e -> doAddList()));
-        playlistMenu.addSeparator();
-        playlistMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.saveList"), org.ttplayer.util.MenuIcons.saveList(), e -> doSaveList()));
-        playlistMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.deleteList"), org.ttplayer.util.MenuIcons.delete(), e -> doDeleteList()));
-        playlistMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.saveAllLists"), org.ttplayer.util.MenuIcons.saveAll(), e -> doSaveAllLists()));
-        playlistMenu.addSeparator();
-        playlistMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.rename"), org.ttplayer.util.MenuIcons.rename(), e -> doRenameList()));
-        playlistMenu.addSeparator();
-        playlistMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.sortByName"), org.ttplayer.util.MenuIcons.sortPlaylists(), e -> doSortPlaylists()));
+        playlistMenu = TtMenuCatalog.create(TtMenuCatalog.Kind.LIST, this);
     }
 
     private void doSwitchList() {
@@ -879,12 +638,8 @@ public class PlaylistWindow extends SkinWindow {
         return ui;
     }
 
-    private JCheckBoxMenuItem[] modeItems;
-    private boolean pauseAfterPlay = false;
     private int lastFindStart = -1;
     private final java.util.List<Integer> foundIndices = new java.util.ArrayList<>();
-
-    private static final String[] AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".flac", ".wma", ".aac", ".m4a", ".ape"};
 
     private void doAddFile() {
         JFileChooser chooser = new JFileChooser();
@@ -913,7 +668,7 @@ public class PlaylistWindow extends SkinWindow {
                 collectAudioFiles(f, out);
             } else {
                 String n = f.getName().toLowerCase();
-                for (String ext : AUDIO_EXTS) {
+                for (String ext : org.ttplayer.util.FileAssociationService.EXTENSIONS) {
                     if (n.endsWith(ext)) { out.add(f); break; }
                 }
             }
@@ -1011,6 +766,8 @@ public class PlaylistWindow extends SkinWindow {
         if (files == null || files.isEmpty()) return;
         loadSongsAsync(null, files, true);
     }
+    public void addAudioFiles(List<File> files, boolean play) { if (files != null && !files.isEmpty()) loadSongsAsync(null, files, play); }
+
     private void doAddUrl() {
         String url = JOptionPane.showInputDialog(this, org.ttplayer.util.Messages.get("dialog.addUrlPrompt"), org.ttplayer.util.Messages.get("dialog.addUrlTitle"), JOptionPane.PLAIN_MESSAGE);
         if (url != null && !url.trim().isEmpty()) {
@@ -1100,7 +857,14 @@ public class PlaylistWindow extends SkinWindow {
         int idx = foundIndices.get(lastFindStart); listRight.setSelectedIndex(idx); listRight.ensureIndexIsVisible(idx);
     }
     private void doLocateCurrent() {
-        int idx = playerEngine != null ? playerEngine.getCurrentSongIndex() : -1;
+        Playlist playing = playerEngine == null ? null : playerEngine.getPlayingPlaylist();
+        int playlistIndex = playing == null || playlistManager == null ? -1 : playlistManager.getAllPlaylists().indexOf(playing);
+        if (playlistIndex >= 0) {
+            playlistManager.setCurrentPlaylist(playlistIndex);
+            refreshLeftList();
+            refreshRightList();
+        }
+        int idx = playing == null || playerEngine == null ? -1 : playing.songs.indexOf(playerEngine.getCurrentSong());
         if (idx >= 0) {
             listRight.setSelectedIndex(idx);
             listRight.ensureIndexIsVisible(idx);
@@ -1109,18 +873,116 @@ public class PlaylistWindow extends SkinWindow {
         }
     }
 
-    private void doSelectMode(int mi) {
-        for (int i = 0; i < 4; i++) modeItems[i].setState(i == mi);
-        JOptionPane.showMessageDialog(this, org.ttplayer.util.Messages.get("dialog.modeSwitchedPrefix") + new String[]{org.ttplayer.util.Messages.get("mode.sequential"), org.ttplayer.util.Messages.get("mode.loop"), org.ttplayer.util.Messages.get("mode.single"), org.ttplayer.util.Messages.get("mode.random")}[mi], org.ttplayer.util.Messages.get("dialog.playModeTitle"), JOptionPane.INFORMATION_MESSAGE);
+    public boolean performMenuAction(String action) {
+        if (action.startsWith("list:")) {
+            playlistManager.setCurrentPlaylist(Integer.parseInt(action.substring(5)));
+            refreshLeftList();
+            refreshRightList();
+            savePlaylistConfig();
+            return true;
+        }
+        if (action.startsWith("language:")) {
+            changeLanguage(Messages.fromTag(action.substring(9)));
+            return true;
+        }
+        switch (action) {
+            case "open": doAddFile(); break;
+            case "folder": case "add_search": doAddFolder(); break;
+            case "add_url": doAddUrl(); break;
+            case "delete": doDeleteSelected(); break;
+            case "delete_other": doDeleteNotSelected(); break;
+            case "delete_duplicates": doDeleteDuplicates(); break;
+            case "clear_list": doClearList(); break;
+            case "sort_title": doSortByField("title"); break;
+            case "sort_artist": doSortByField("artist"); break;
+            case "sort_filename": doSortByField("filename"); break;
+            case "sort_path": doSortByField("path"); break;
+            case "sort_reverse": doReverse(); break;
+            case "sort_random": doRandomSort(); break;
+            case "find": doFind(); break;
+            case "find_next": doFindNext(); break;
+            case "locate": doLocateCurrent(); break;
+            case "new_list": doNewList(); break;
+            case "import": doAddList(); break;
+            case "export": doSaveList(); break;
+            case "delete_list": doDeleteList(); break;
+            case "save_all": doSaveAllLists(); break;
+            case "rename_list": doRenameList(); break;
+            case "sort_lists": doSortPlaylists(); break;
+            case "playlist_options": doPlaylistOptions(); break;
+            case "batch_info": doBatchInfo(); break;
+            case "filename_format": doFileNameFormat(); break;
+            case "select_all": if (listRight != null) listRight.selectAll(); break;
+            case "select_invert": if (listRight != null) listRight.invertSelection(); break;
+            case "properties": showProperties(); break;
+            case "open_file_location": openFileLocation(); break;
+            case "skin": doSkin(); break;
+            case "open_skin": doOpenSkin(); break;
+            case "preferences": doOptions(); break;
+            case "lyric": doToggleLyric(); break;
+            case "equalizer": doToggleEqualizer(); break;
+            case "desktop": doToggleDesktopLyric(); break;
+            case "minimode": doMiniMode(); break;
+            case "about": doAbout(); break;
+            default: return false;
+        }
+        if (action.startsWith("sort_") || java.util.Arrays.asList("delete", "delete_other", "delete_duplicates", "clear_list",
+                "new_list", "import", "delete_list", "rename_list", "sort_lists", "add_url").contains(action)) savePlaylistConfig();
+        return true;
     }
-    private void doTogglePauseAfterPlay() { pauseAfterPlay = !pauseAfterPlay; modeItems[4].setState(pauseAfterPlay); }
+
+    public List<Song> getSelectedSongs() {
+        List<Song> selected = new ArrayList<>();
+        Playlist current = playlistManager == null ? null : playlistManager.getCurrentPlaylist();
+        if (current != null && listRight != null) {
+            for (int index : listRight.getSelectedIndices()) {
+                if (index >= 0 && index < current.songs.size()) selected.add(current.songs.get(index));
+            }
+        }
+        return selected;
+    }
+
+    private void showProperties() {
+        Song song = getContextSong();
+        if (song == null) return;
+        String[][] values = {
+            {Messages.get("properties.title"), song.title}, {Messages.get("properties.artist"), song.artist},
+            {Messages.get("properties.album"), song.album}, {Messages.get("properties.year"), song.year},
+            {Messages.get("properties.genre"), song.genre}, {Messages.get("properties.duration"), song.duration},
+            {Messages.get("properties.path"), song.filePath}, {Messages.get("properties.comment"), song.comment}
+        };
+        JPanel panel = new JPanel(new GridLayout(0, 2, 8, 6));
+        for (String[] value : values) {
+            panel.add(new JLabel(value[0]));
+            JTextField field = new JTextField(value[1] == null ? "" : value[1], 30);
+            field.setEditable(false);
+            panel.add(field);
+        }
+        JOptionPane.showMessageDialog(this, panel, Messages.get("menu.properties"), JOptionPane.PLAIN_MESSAGE);
+    }
+
+    private void openFileLocation() {
+        Song song = getContextSong();
+        if (song == null || song.filePath == null) return;
+        File file = new File(song.filePath).getAbsoluteFile();
+        try {
+            if (!file.exists()) throw new IOException(Messages.get("player.fileNotFound"));
+            if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win"))
+                new ProcessBuilder("explorer.exe", "/select,", file.getAbsolutePath()).start();
+            else if (Desktop.isDesktopSupported()) Desktop.getDesktop().open(file.getParentFile());
+            else throw new IOException(Messages.get("dialog.fileLocationUnavailable"));
+        } catch (IOException | UnsupportedOperationException error) {
+            JOptionPane.showMessageDialog(this, error.getMessage(), Messages.get("menu.openFileLocation"), JOptionPane.ERROR_MESSAGE);
+        }
+    }
 
     private void doPlaylistOptions() {
         JPanel panel = new JPanel(new GridLayout(0, 2, 10, 5));
-        JTextField prefixField = new JTextField("TTPlayer");
+        JTextField prefixField = new JTextField(MenuSettings.get("playlistPrefix", "TTPlayer"));
         panel.add(new JLabel(org.ttplayer.util.Messages.get("dialog.fileAssocPrefix")));
         panel.add(prefixField);
-        JOptionPane.showMessageDialog(this, panel, org.ttplayer.util.Messages.get("dialog.playlistOptionsTitle"), JOptionPane.PLAIN_MESSAGE);
+        if (JOptionPane.showConfirmDialog(this, panel, Messages.get("dialog.playlistOptionsTitle"), JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION) MenuSettings.set("playlistPrefix", prefixField.getText().trim());
     }
 
     private void doBatchInfo() {
@@ -1152,26 +1014,18 @@ public class PlaylistWindow extends SkinWindow {
         String sel = (String) JOptionPane.showInputDialog(this,
             org.ttplayer.util.Messages.get("dialog.filenameFormatMsg"),
             org.ttplayer.util.Messages.get("dialog.filenameFormatTitle"),
-            JOptionPane.PLAIN_MESSAGE, null, templates, templates[0]);
+            JOptionPane.PLAIN_MESSAGE, null, templates, MenuSettings.get("filenameFormat", templates[0]));
         if (sel == null) return;
-        JOptionPane.showMessageDialog(this, org.ttplayer.util.Messages.get("dialog.formatSelectedPrefix") + sel, org.ttplayer.util.Messages.get("dialog.filenameFormatTitle"), JOptionPane.INFORMATION_MESSAGE);
+        MenuSettings.set("filenameFormat", sel);
+        refreshRightList();
     }
 
     public void doOptions() {
-        JPanel panel = new JPanel(new GridLayout(0, 1, 5, 5));
-        JCheckBox miniOnStart = new JCheckBox(org.ttplayer.util.Messages.get("dialog.miniOnStart"));
-        JCheckBox rememberPos = new JCheckBox(org.ttplayer.util.Messages.get("dialog.rememberPos"), true);
-        panel.add(miniOnStart);
-        panel.add(rememberPos);
-        JOptionPane.showMessageDialog(this, panel, org.ttplayer.util.Messages.get("dialog.optionsTitle"), JOptionPane.PLAIN_MESSAGE);
+        if (menuActions != null) menuActions.execute("preferences");
     }
 
     public void doSkin() {
-        SkinSelectDialog dlg = new SkinSelectDialog(SwingUtilities.windowForComponent(this));
-        dlg.setVisible(true);
-        if (dlg.selectedSkinSpec != null && skinChangeListener != null) {
-            skinChangeListener.onSkinChanged(dlg.selectedSkinSpec);
-        }
+        if (menuActions != null) menuActions.execute("skin");
     }
 
     public void doToggleEqualizer() {
@@ -1241,7 +1095,12 @@ public class PlaylistWindow extends SkinWindow {
             int i = 1;
             for (Song song : current.songs) {
                 StringBuilder sb = new StringBuilder();
-                sb.append(i++).append(". ").append(song);
+                String format = MenuSettings.get("filenameFormat", "");
+                String title = format.isEmpty() ? song.toString() : format.replace("%artist%", song.artist == null ? "" : song.artist)
+                        .replace("%title%", song.title == null ? song.getFileName() : song.title)
+                        .replace("%album%", song.album == null ? "" : song.album)
+                        .replace("%filename%", song.getFileName()).replace("%track%", String.valueOf(i));
+                sb.append(i++).append(". ").append(title);
                 // 如果有时长，加上时长
                 if (song.duration != null && !song.duration.isEmpty()) {
                     sb.append(" (").append(song.duration).append(")");
@@ -1294,59 +1153,30 @@ public class PlaylistWindow extends SkinWindow {
      * 创建一个完整的右键菜单（供主窗口等复用）。
      */
     public JPopupMenu createRightClickMenu() {
-        JPopupMenu rightMenu = new JPopupMenu();
-
-        JMenu addSub = new JMenu(org.ttplayer.util.Messages.get("menu.add"));
-        addSub.setIcon(org.ttplayer.util.MenuIcons.add());
-        populateAddMenu(addSub);
-        rightMenu.add(addSub);
-
-        JMenu delSub = new JMenu(org.ttplayer.util.Messages.get("menu.delete"));
-        delSub.setIcon(org.ttplayer.util.MenuIcons.delete());
-        populateDelMenu(delSub);
-        rightMenu.add(delSub);
-
-        JMenu sortSub = new JMenu(org.ttplayer.util.Messages.get("menu.sort"));
-        sortSub.setIcon(org.ttplayer.util.MenuIcons.randomSort());
-        populateSortMenu(sortSub);
-        rightMenu.add(sortSub);
-
-        JMenu findSub = new JMenu(org.ttplayer.util.Messages.get("menu.find"));
-        findSub.setIcon(org.ttplayer.util.MenuIcons.find());
-        populateFindMenu(findSub);
-        rightMenu.add(findSub);
-
-        JMenu modeSub = new JMenu(org.ttplayer.util.Messages.get("menu.mode"));
-        modeSub.setIcon(org.ttplayer.util.MenuIcons.modelLoop());
-        populateModeMenu(modeSub, false);
-        rightMenu.add(modeSub);
-
-        JMenu optSub = new JMenu(org.ttplayer.util.Messages.get("menu.options"));
-        optSub.setIcon(org.ttplayer.util.MenuIcons.options());
-        populateOptMenu(optSub);
-        rightMenu.add(optSub);
-
-        rightMenu.addSeparator();
-        rightMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.skin"), org.ttplayer.util.MenuIcons.skin(), ev -> doSkin()));
-        rightMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.options_"), org.ttplayer.util.MenuIcons.options(), ev -> doOptions()));
-        rightMenu.addSeparator();
-        rightMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.lyricShow"), org.ttplayer.util.MenuIcons.lyric(), ev -> doToggleLyric()));
-        rightMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.equalizer"), org.ttplayer.util.MenuIcons.equalizer(), ev -> doToggleEqualizer()));
-        rightMenu.addSeparator();
-        rightMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.desktopLyric"), org.ttplayer.util.MenuIcons.desktopLyric(), ev -> doToggleDesktopLyric()));
-        rightMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.miniMode"), org.ttplayer.util.MenuIcons.miniMode(), ev -> doMiniMode()));
-        rightMenu.addSeparator();
-        rightMenu.add(org.ttplayer.util.UIUtils.createMenuItem(org.ttplayer.util.Messages.get("menu.about"), org.ttplayer.util.MenuIcons.about(), ev -> doAbout()));
-
-        org.ttplayer.util.UIUtils.setMenuFont(rightMenu, org.ttplayer.util.FontUtils.getDefaultChineseFont(12));
-
-        return rightMenu;
+        return TtMenuCatalog.create(TtMenuCatalog.Kind.MAIN, this);
     }
 
-    private void showRightListMenu(MouseEvent e, int row) {
-        if (row >= 0) listRight.setSelectedIndex(row);
-        JPopupMenu rightMenu = createRightClickMenu();
-        rightMenu.show(listRight, e.getX(), e.getY());
+    private void doOpenSkin() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("TTPlayer (*.skn)", "skn"));
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        String specification = org.ttplayer.util.SkinLoader.findSkinPath(chooser.getSelectedFile());
+        if (specification != null && org.ttplayer.util.SkinLoader.loadSkinFrom(new TtSkin(), specification)) {
+            if (skinChangeListener != null) skinChangeListener.onSkinChanged(specification);
+        } else JOptionPane.showMessageDialog(this, Messages.get("dialog.invalidSkin"), Messages.get("menu.openSkin"), JOptionPane.ERROR_MESSAGE);
+    }
+
+    private void showRightListMenu(MouseEvent event, int row) {
+        if (row >= 0 && !listRight.isSelectedIndex(row)) listRight.setSelectedIndex(row);
+        else if (row >= 0) listRight.setLeadSelectionIndex(row);
+        TtMenuCatalog.create(TtMenuCatalog.Kind.PLAYLIST_CONTEXT, this)
+                .show(listRight, event.getX(), event.getY());
+    }
+
+    private Song getContextSong() {
+        Playlist current = playlistManager == null ? null : playlistManager.getCurrentPlaylist();
+        int index = listRight == null ? -1 : listRight.getSelectedIndex();
+        return current == null || index < 0 || index >= current.songs.size() ? null : current.songs.get(index);
     }
 
     static TtSkin.WindowDef findWindow(TtSkin skin) {

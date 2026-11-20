@@ -33,6 +33,7 @@ public class SkinWindow extends JFrame {
     protected int bgW, bgH;
 
     private int minW = 100, minH = 60;
+    private boolean edgeResizerInstalled;
 
     private List<ControlInfo> controls = new ArrayList<>();
 
@@ -76,19 +77,25 @@ public class SkinWindow extends JFrame {
         setBackground(new Color(0, 0, 0, 0));
         buildControls();
         if (hasResizeRect()) {
-            new EdgeResizer(this);
-            addComponentListener(new java.awt.event.ComponentAdapter() {
-                public void componentResized(java.awt.event.ComponentEvent e) {
-                    repositionControls();
-                    updateWindowShape();
-                }
-            });
+            enableEdgeResizing();
         } else {
             setResizable(false);
         }
     }
 
     protected void buildControls() {}
+
+    protected void enableEdgeResizing() {
+        if (edgeResizerInstalled) return;
+        edgeResizerInstalled = true;
+        new EdgeResizer(this);
+        addComponentListener(new java.awt.event.ComponentAdapter() {
+            public void componentResized(java.awt.event.ComponentEvent event) {
+                repositionControls();
+                updateWindowShape();
+            }
+        });
+    }
 
     protected void updateWindowShape() {}
 
@@ -171,8 +178,11 @@ public class SkinWindow extends JFrame {
             }
         }
 
-        comp.setBounds(newX, newY, origW, origH);
-        comp.setPreferredSize(new Dimension(origW, origH));
+        if (comp instanceof TtLed) ((TtLed) comp).setDisplayBounds(newX, newY, origW, origH);
+        else {
+            comp.setBounds(newX, newY, origW, origH);
+            comp.setPreferredSize(new Dimension(origW, origH));
+        }
     }
 
     /** align 字符串是否包含任一 token（忽略大小写） */
@@ -315,6 +325,7 @@ public class SkinWindow extends JFrame {
 
         @Override
         public void mousePressed(MouseEvent e) {
+            if (!SwingUtilities.isLeftMouseButton(e)) { edge = 0; return; }
             edge = hitEdge(e);
             startX = e.getXOnScreen();
             startY = e.getYOnScreen();
@@ -418,11 +429,9 @@ public class SkinWindow extends JFrame {
         } else {
             led = new TtLed(null);
         }
-        // 使用皮肤配置的宽度，但确保足够
         int width = ctl.right - ctl.left;
-        int height = Math.max(16,ctl.bottom - ctl.top);
-        led.setBounds(ctl.left, ctl.top, width, height);
-        led.setPreferredSize(new Dimension(width, height));
+        int height = ctl.bottom - ctl.top;
+        led.setDisplayBounds(ctl.left, ctl.top, width, height);
         led.setText("00:00");
         if ("right".equals(ctl.align)) led.setAlignRight(true);
         getContentPane().add(led);

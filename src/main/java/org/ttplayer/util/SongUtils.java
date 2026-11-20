@@ -6,12 +6,10 @@ import java.io.File;
 
 public class SongUtils {
 
-    private static final String[] AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".flac", ".wma", ".aac", ".m4a", ".ape"};
-
     public static boolean isAudioFile(File f) {
         if (f == null || !f.isFile()) return false;
-        String name = f.getName().toLowerCase();
-        for (String ext : AUDIO_EXTS) {
+        String name = f.getName().toLowerCase(java.util.Locale.ROOT);
+        for (String ext : FileAssociationService.EXTENSIONS) {
             if (name.endsWith(ext)) return true;
         }
         return false;

@@ -13,7 +13,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
-public class EqualizerWindow extends SkinWindow {
+public class EqualizerWindow extends SkinWindow implements TtMenuCatalog.Actions {
 
     public TtButton btnEnabled, btnProfile, btnReset;
     public TtButton btnClose;
@@ -181,6 +181,9 @@ public class EqualizerWindow extends SkinWindow {
 
         // 右键菜单：启用均衡器 / 启用杜比环绕 / 可选类别
         final JPopupMenu menu = buildPopupMenu(eq);
+        addPopup(getContentPane(), menu);
+        if (btnProfile != null) btnProfile.addActionListener(event ->
+                TtMenuCatalog.create(TtMenuCatalog.Kind.PRESETS, this).show(btnProfile, 0, btnProfile.getHeight()));
 
         // 绑定右键：窗口内任何位置（包括背景面板）弹出
          addMouseListener(new MouseAdapter() {
@@ -217,7 +220,7 @@ public class EqualizerWindow extends SkinWindow {
 
 
     private void addPopup(java.awt.Component comp, JPopupMenu menu) {
-        addMouseListener(new MouseAdapter() {
+        comp.addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
                  super.mousePressed(e);
@@ -232,44 +235,42 @@ public class EqualizerWindow extends SkinWindow {
     }
 
     private JPopupMenu buildPopupMenu(Equalizer eq) {
-        JPopupMenu menu = new JPopupMenu();
+        return TtMenuCatalog.create(TtMenuCatalog.Kind.EQUALIZER, this);
+    }
 
-        JCheckBoxMenuItem eqOn = new JCheckBoxMenuItem("启用均衡器", eq.isEnabled());
-        eqOn.addActionListener(e -> {
-            boolean on = eqOn.isSelected();
-            eq.setEnabled(on);
-            if (btnEnabled != null) btnEnabled.setSelected(on);
-            saveConfig();
-        });
-        menu.add(eqOn);
+    @Override
+    public void execute(String action) { performMenuAction(action); }
 
-        JCheckBoxMenuItem dolby = new JCheckBoxMenuItem("启用杜比环绕", eq.isDolbySurround());
-        dolby.addActionListener(e -> {
-            eq.setDolbySurround(dolby.isSelected());
-            saveConfig();
-        });
-        menu.add(dolby);
+    @Override
+    public boolean checked(String action) {
+        if (playerEngine == null) return false;
+        Equalizer equalizer = playerEngine.getEqualizer();
+        if ("enabled".equals(action)) return equalizer.isEnabled();
+        if ("dolby".equals(action)) return equalizer.isDolbySurround();
+        return action.startsWith("preset:") && categoryIndex == Integer.parseInt(action.substring(7));
+    }
 
-        menu.addSeparator();
-
-        JMenu categories = new JMenu("可选类别");
-        ButtonGroup categoryGroup = new ButtonGroup();
-        for (int i = 0; i < CATEGORY_NAMES.length; i++) {
-            final String name = CATEGORY_NAMES[i];
-            final double[] gains = CATEGORY_PRESETS[i];
-            JCheckBoxMenuItem item = new JCheckBoxMenuItem(name);
-            categoryGroup.add(item);   // 互斥单选：选中的项显示 ✓
-            final int idx = i;
-            item.addActionListener(e -> {
-                if (item.isSelected()) applyCategory(eq, idx, gains);
-            });
-            categories.add(item);
-            // 恢复上次选择
-            if (categoryIndex == i) item.setSelected(true);
-        }
-        menu.add(categories);
-
-        return menu;
+    public boolean performMenuAction(String action) {
+        if (playerEngine == null) return false;
+        Equalizer equalizer = playerEngine.getEqualizer();
+        if (action.startsWith("preset:")) {
+            int index = Integer.parseInt(action.substring(7));
+            if (index < 0 || index >= CATEGORY_PRESETS.length) return false;
+            applyCategory(equalizer, index, CATEGORY_PRESETS[index]);
+        } else if ("enabled".equals(action)) {
+            equalizer.setEnabled(!equalizer.isEnabled());
+            if (btnEnabled != null) btnEnabled.setSelected(equalizer.isEnabled());
+        } else if ("dolby".equals(action)) {
+            equalizer.setDolbySurround(!equalizer.isDolbySurround());
+        } else if ("reset".equals(action)) {
+            equalizer.reset();
+            equalizer.setDolbySurround(false);
+            categoryIndex = -1;
+            if (eqSliders != null) for (TtVSlider slider : eqSliders) slider.setValue(50);
+            if (preampSlider != null) preampSlider.setValue(50);
+        } else return false;
+        saveConfig();
+        return true;
     }
 
     /** 应用预设：重置增益 → 套用曲线 → 自动启用均衡器并同步按钮与滑块 */

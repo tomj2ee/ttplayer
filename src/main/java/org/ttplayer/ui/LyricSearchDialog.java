@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 import org.ttplayer.model.Song;
 import org.ttplayer.lyrics.LyricSearchService;
 import org.ttplayer.lyrics.SongResult;
+import org.ttplayer.lyrics.LRCParser;
+import org.ttplayer.lyrics.LyricsRepository;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -18,7 +20,6 @@ import java.awt.event.*;
 import java.awt.geom.Path2D;
 import java.awt.geom.RoundRectangle2D;
 import java.io.File;
-import java.io.PrintWriter;
 import java.util.List;
 import org.ttplayer.util.Messages;
 
@@ -54,6 +55,9 @@ public class LyricSearchDialog extends JDialog {
     private AntButton searchButton;
     private List<SongResult> currentResults;
     private Runnable onLyricDownloaded;
+    private SwingWorker<?, ?> searchWorker, downloadWorker;
+    private volatile boolean disposed;
+    private java.util.function.Consumer<String> lyricsReceived;
 
     private int hoverRow = -1;
 
@@ -74,6 +78,7 @@ public class LyricSearchDialog extends JDialog {
     }
 
     public void setOnLyricDownloaded(Runnable r) { this.onLyricDownloaded = r; }
+    public void setOnLyricsReceived(java.util.function.Consumer<String> listener) { lyricsReceived = listener; }
 
     private void initComponents() {
         // ---- 整体页面背景 ----
@@ -294,13 +299,7 @@ public class LyricSearchDialog extends JDialog {
     // ============ 业务逻辑 ============
 
     private void doSearch() {
-        String keyword = titleField.getText().trim();
-        if (keyword.isEmpty()) {
-            keyword = artistField.getText().trim();
-        }
-        if (keyword.isEmpty()) {
-            keyword = (artistField.getText().trim() + " " + titleField.getText().trim()).trim();
-        }
+        String keyword = (artistField.getText().trim() + " " + titleField.getText().trim()).trim();
         if (keyword.isEmpty()) {
             JOptionPane.showMessageDialog(this, Messages.get("lyricSearch.needKeyword"), Messages.get("dialog.hint"), JOptionPane.WARNING_MESSAGE);
             return;
@@ -320,6 +319,7 @@ public class LyricSearchDialog extends JDialog {
                 return LyricSearchService.searchSong(searchKeyword, 20);
             }
             protected void done() {
+                if (isCancelled() || disposed) return;
                 setCursor(Cursor.getDefaultCursor());
                 searchButton.setEnabled(true);
                 searchButton.setText(oldText);
@@ -345,6 +345,7 @@ public class LyricSearchDialog extends JDialog {
                 }
             }
         };
+        searchWorker = worker;
         worker.execute();
     }
 
@@ -387,16 +388,25 @@ public class LyricSearchDialog extends JDialog {
             }
             targetFile = new File(savePath);
         }
+        if (targetFile.exists() && JOptionPane.showConfirmDialog(this, Messages.get("lyric.overwrite"),
+                Messages.get("lyricSearch.download"), JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
         setCursor(new Cursor(Cursor.WAIT_CURSOR));
         downloadButton.setEnabled(false);
         String oldText = downloadButton.getText();
         downloadButton.setText("…");
+        final boolean associate = associateCheckBox.isSelected();
 
         SwingWorker<String, Void> worker = new SwingWorker<String, Void>() {
             protected String doInBackground() throws Exception {
-                return LyricSearchService.getLyricByMid(selected.getMid());
+                String lyrics = LyricSearchService.getLyricByMid(selected.getMid());
+                if (isCancelled() || disposed) return null;
+                if (lyrics == null || new LRCParser().parse(lyrics).lines.isEmpty())
+                    throw new java.io.IOException(Messages.get("lyricSearch.noLyric"));
+                LyricsRepository.store(currentSong, lyrics, targetFile, associate);
+                return lyrics;
             }
             protected void done() {
+                if (isCancelled() || disposed) return;
                 setCursor(Cursor.getDefaultCursor());
                 downloadButton.setEnabled(true);
                 downloadButton.setText(oldText);
@@ -408,13 +418,11 @@ public class LyricSearchDialog extends JDialog {
                         return;
                     }
 
-                    try (PrintWriter w = new PrintWriter(targetFile, "UTF-8")) {
-                        w.print(lrcText);
-                    }
-
                     JOptionPane.showMessageDialog(LyricSearchDialog.this,
                         Messages.get("lyricSearch.savedPrefix") + targetFile.getAbsolutePath(), Messages.get("lyricSearch.downloadSuccess"), JOptionPane.INFORMATION_MESSAGE);
                     dispose();
+
+                    if (lyricsReceived != null) lyricsReceived.accept(lrcText);
 
                     if (onLyricDownloaded != null) {
                         onLyricDownloaded.run();
@@ -425,7 +433,15 @@ public class LyricSearchDialog extends JDialog {
                 }
             }
         };
+        downloadWorker = worker;
         worker.execute();
+    }
+
+    @Override public void dispose() {
+        disposed = true;
+        if (searchWorker != null) searchWorker.cancel(true);
+        if (downloadWorker != null) downloadWorker.cancel(true);
+        super.dispose();
     }
 
     // ================================================================

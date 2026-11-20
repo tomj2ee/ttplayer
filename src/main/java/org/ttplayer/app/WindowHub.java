@@ -41,6 +41,7 @@ public class WindowHub {
 
     // ---- 兄弟控制器 ----
     public final TrayController tray = new TrayController(this);
+    public final ApplicationMenus menus = new ApplicationMenus(this);
     public final FileDropController fileDrop = new FileDropController(this);
     private final PlayerEventListener playerEvent = new PlayerEventListener(this);
     private final WindowAssembler assembler = new WindowAssembler(this);
@@ -63,11 +64,17 @@ public class WindowHub {
     // ==================== 创建 / 重建 ====================
 
     public void createUI(String skinPath) {
+        createUI(skinPath, true);
+    }
+
+    public void createUI(String skinPath, boolean restorePlayback) {
+        org.ttplayer.ui.TtMenuStyle.install();
         currentSkinPath = skinPath;
         skin = new TtSkin();
         SkinLoader.loadWithFallback(skin, skinPath);
 
         int savedSongIndex = -1;
+        boolean startup = playlistManager == null;
         if (playlistManager == null) {
             playlistManager = new PlaylistManager();
             savedSongIndex = PlaylistConfig.load(playlistManager);
@@ -84,12 +91,24 @@ public class WindowHub {
         assembler.setupConfigSaving();
         lifecycle.showAndRestore();
 
-        if (savedSongIndex >= 0) {
+        if (startup && restorePlayback && org.ttplayer.engine.PlaybackSettings.get().autoPlay) {
             final int idx = savedSongIndex;
             SwingUtilities.invokeLater(() -> {
-                if (playlistManager.getCurrentPlaylist() != null &&
-                    idx < playlistManager.getCurrentPlaylist().songs.size()) {
-                    playerEngine.play(idx);
+                String lastPath = org.ttplayer.util.MenuSettings.get("playback.lastPath", "");
+                Song song = null;
+                for (org.ttplayer.model.Playlist playlist : playlistManager.getAllPlaylists()) {
+                    for (Song candidate : playlist.songs) if (lastPath.equals(candidate.filePath)) { song = candidate; break; }
+                    if (song != null) break;
+                }
+                if (song == null && idx >= 0 && playlistManager.getCurrentPlaylist() != null && idx < playlistManager.getCurrentPlaylist().songs.size())
+                    song = playlistManager.getCurrentPlaylist().songs.get(idx);
+                if (song != null) {
+                    long position = 0;
+                    if (org.ttplayer.engine.PlaybackSettings.get().resumePosition && lastPath.equals(song.filePath)) {
+                        try { position = Math.max(0, Math.min(31536000000L, Long.parseLong(org.ttplayer.util.MenuSettings.get("playback.lastPositionMs", "0")))); }
+                        catch (NumberFormatException ignored) {}
+                    }
+                    playerEngine.playFrom(song, position);
                 }
             });
         }

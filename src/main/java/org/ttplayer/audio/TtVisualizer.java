@@ -1,11 +1,24 @@
 package org.ttplayer.audio;
 
 import org.ttplayer.util.UIUtils;
+import org.ttplayer.util.Messages;
+import org.ttplayer.ui.VisualSettingsDialog;
+import org.ttplayer.ui.VisualFullscreenWindow;
 import org.w3c.dom.Element;
 
 import javax.swing.JComponent;
+import javax.swing.JPopupMenu;
+import javax.swing.JMenuItem;
+import javax.swing.JRadioButtonMenuItem;
+import javax.swing.ButtonGroup;
+import javax.swing.SwingUtilities;
 import java.awt.Color;
+import java.awt.Font;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.beans.PropertyChangeListener;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.util.Arrays;
@@ -32,10 +45,26 @@ public class TtVisualizer extends JComponent {
             this.effect = effect;
             this.preset = preset;
         }
+
+        public static Mode fromId(int id) {
+            for (Mode mode : values()) {
+                if (mode.id == id) return mode;
+            }
+            return BARS;
+        }
+
+        @Override
+        public String toString() {
+            return Messages.get("visual.mode." + id);
+        }
     }
 
     private final TtSpectrum spectrum = new TtSpectrum();
-    private final TtVisualStyle style = new TtVisualStyle();
+    private TtVisualStyle skinStyle = new TtVisualStyle();
+    private TtVisualStyle style = new TtVisualStyle();
+    private final PropertyChangeListener settingsListener = event -> reloadSettings();
+    private VisualSettingsDialog settingsDialog;
+    private VisualFullscreenWindow fullscreenWindow;
     private final TtMotionSpectrum motion = new TtMotionSpectrum();
     private final TtOriginalScope originalScope = new TtOriginalScope();
     private final TtClassicSpectrum classic = new TtClassicSpectrum();
@@ -58,6 +87,7 @@ public class TtVisualizer extends JComponent {
     private float originalSeconds;
     private long lastDataNanos;
     private long lastRenderNanos;
+    private long nextRenderNanos;
 
     public Color backgroundColor = new Color(16, 22, 30);
     public Color skinColorTop;
@@ -72,11 +102,117 @@ public class TtVisualizer extends JComponent {
     public TtVisualizer() {
         setOpaque(true);
         for (int index = 0; index < projected.length; index++) projected[index] = new TtClassicSpectrum.Column();
+        reloadSettings();
+        addMouseListener(new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent event) {
+                if (event.isPopupTrigger()) showVisualMenu(event);
+                else if (SwingUtilities.isLeftMouseButton(event)) {
+                    if (event.getClickCount() == 2) toggleFullscreen();
+                    else if (event.getClickCount() == 1) cycleMode();
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent event) {
+                if (event.isPopupTrigger()) showVisualMenu(event);
+            }
+        });
+    }
+
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        TtVisualSettings.addListener(settingsListener);
+        reloadSettings();
+    }
+
+    @Override
+    public void removeNotify() {
+        TtVisualSettings.removeListener(settingsListener);
+        if (settingsDialog != null) settingsDialog.dispose();
+        if (fullscreenWindow != null) fullscreenWindow.dispose();
+        super.removeNotify();
+    }
+
+    private void reloadSettings() {
+        TtVisualSettings settings = TtVisualSettings.get();
+        mode = settings.mode;
+        style = settings.effective(skinStyle);
+        nextRenderNanos = 0;
+        buildGoomPalette();
+        setToolTipText(mode.toString());
+        repaint();
+    }
+
+    public TtVisualSettings getEffectiveSettings() {
+        TtVisualSettings settings = TtVisualSettings.get();
+        boolean custom = settings.custom;
+        settings.customize(skinStyle);
+        settings.custom = custom;
+        return settings;
+    }
+
+    public void copySkinFrom(TtVisualizer source) {
+        skinStyle = source.skinStyle.copy();
+        backgroundColor = source.backgroundColor;
+        reloadSettings();
+    }
+
+    public void showSettings() {
+        if (settingsDialog == null || !settingsDialog.isDisplayable()) {
+            settingsDialog = new VisualSettingsDialog(this);
+        }
+        settingsDialog.setVisible(true);
+        settingsDialog.toFront();
+    }
+
+    public void toggleFullscreen() {
+        java.awt.Window owner = SwingUtilities.getWindowAncestor(this);
+        if (owner instanceof VisualFullscreenWindow) {
+            owner.dispose();
+        } else {
+            if (fullscreenWindow == null || !fullscreenWindow.isDisplayable()) {
+                fullscreenWindow = new VisualFullscreenWindow(this);
+            }
+            fullscreenWindow.setVisible(true);
+            fullscreenWindow.toFront();
+        }
+    }
+
+    public void closeFullscreen() { if (fullscreenWindow != null) fullscreenWindow.dispose(); }
+    private java.util.function.Supplier<JPopupMenu> contextMenu;
+    public void setContextMenu(java.util.function.Supplier<JPopupMenu> menu) { contextMenu = menu; }
+
+    private void showVisualMenu(MouseEvent event) {
+        if (contextMenu != null) { contextMenu.get().show(this, event.getX(), event.getY()); return; }
+        JPopupMenu menu = new JPopupMenu();
+        ButtonGroup group = new ButtonGroup();
+        for (Mode option : Mode.values()) {
+            JRadioButtonMenuItem item = new JRadioButtonMenuItem(option.toString(), option == mode);
+            item.setActionCommand("visual:" + option.id);
+            group.add(item);
+            item.addActionListener(action -> setMode(option));
+            menu.add(item);
+        }
+        menu.addSeparator();
+        JMenuItem settings = new JMenuItem(Messages.get("visual.settings"));
+        settings.setActionCommand("settings");
+        settings.addActionListener(action -> showSettings());
+        menu.add(settings);
+        boolean fullscreen = SwingUtilities.getWindowAncestor(this) instanceof VisualFullscreenWindow;
+        JMenuItem full = new JMenuItem(Messages.get(fullscreen ? "visual.exitFullscreen" : "visual.fullscreen"));
+        full.setActionCommand(fullscreen ? "fullscreen_off" : "fullscreen_visual");
+        full.addActionListener(action -> toggleFullscreen());
+        menu.add(full);
+        menu.show(this, event.getX(), event.getY());
     }
 
     public void setMode(Mode nextMode) {
-        mode = nextMode == null ? Mode.BARS : nextMode;
-        repaint();
+        TtVisualSettings settings = TtVisualSettings.get();
+        settings.mode = nextMode == null ? Mode.BARS : nextMode;
+        TtVisualSettings.update(settings);
+        if (!isDisplayable()) reloadSettings();
     }
 
     public Mode getMode() {
@@ -84,11 +220,16 @@ public class TtVisualizer extends JComponent {
     }
 
     public void cycleMode() {
+        cycleMode(1);
+    }
+
+    public void cycleMode(int direction) {
         Mode[] modes = Mode.values();
-        setMode(modes[(mode.ordinal() + 1) % modes.length]);
+        setMode(modes[Math.floorMod(mode.ordinal() + direction, modes.length)]);
     }
 
     public void updateData(byte[] pcmData) {
+        if (fullscreenWindow != null && fullscreenWindow.isDisplayable()) fullscreenWindow.updateData(pcmData);
         long now = System.nanoTime();
         float elapsed = lastDataNanos == 0 ? 1f / 60f
                 : clamp((now - lastDataNanos) / 1_000_000_000f, 0.001f, 0.1f);
@@ -104,6 +245,7 @@ public class TtVisualizer extends JComponent {
     }
 
     public void clearDisplay() {
+        if (fullscreenWindow != null && fullscreenWindow.isDisplayable()) fullscreenWindow.clearDisplay();
         spectrum.reset();
         resetRenderer();
         if (pixels != null) Arrays.fill(pixels, 0);
@@ -124,16 +266,15 @@ public class TtVisualizer extends JComponent {
                     visual, "BlurSpeed", String.valueOf(skinBlurSpeed)).trim());
         } catch (NumberFormatException ignored) {
         }
-        style.top = skinColorTop != null ? skinColorTop : new Color(18, 114, 175);
-        style.middle = skinColorMid != null ? skinColorMid : new Color(40, 143, 189);
-        style.bottom = skinColorBtm != null ? skinColorBtm : new Color(16, 215, 255);
-        style.peak = skinColorPeak != null ? skinColorPeak : Color.WHITE;
-        style.scope = skinColorBlur != null ? skinColorBlur : Color.CYAN;
-        style.wide = skinWide;
-        style.blur = skinBlur;
-        style.blurSpeed = Math.max(1, Math.min(10, skinBlurSpeed));
-        renderedMode = null;
-        repaint();
+        skinStyle.top = skinColorTop != null ? skinColorTop : new Color(18, 114, 175);
+        skinStyle.middle = skinColorMid != null ? skinColorMid : new Color(40, 143, 189);
+        skinStyle.bottom = skinColorBtm != null ? skinColorBtm : new Color(16, 215, 255);
+        skinStyle.peak = skinColorPeak != null ? skinColorPeak : Color.WHITE;
+        skinStyle.scope = skinColorBlur != null ? skinColorBlur : Color.CYAN;
+        skinStyle.wide = skinWide;
+        skinStyle.blur = skinBlur;
+        skinStyle.blurSpeed = Math.max(1, Math.min(10, skinBlurSpeed));
+        reloadSettings();
     }
 
     @Override
@@ -143,14 +284,40 @@ public class TtVisualizer extends JComponent {
         if (width <= 0 || height <= 0) return;
         ensureImage(width, height);
         long now = System.nanoTime();
-        elapsedSeconds = lastRenderNanos == 0 ? 1f / 60f
-                : clamp((now - lastRenderNanos) / 1_000_000_000f, 0.001f, 0.1f);
-        lastRenderNanos = now;
-        frameScale = elapsedSeconds / 0.03f;
-        render();
+        if (renderedMode != mode || nextRenderNanos == 0 || now >= nextRenderNanos) {
+            elapsedSeconds = lastRenderNanos == 0 ? 1f / style.fps
+                    : clamp((now - lastRenderNanos) / 1_000_000_000f, 0.001f, 0.1f);
+            lastRenderNanos = now;
+            frameScale = elapsedSeconds / 0.03f;
+            render();
+            long interval = 1_000_000_000L / style.fps;
+            nextRenderNanos = nextRenderNanos == 0 || now < nextRenderNanos
+                    ? now + interval : now + interval - (now - nextRenderNanos) % interval;
+        }
         graphics.setColor(backgroundColor);
         graphics.fillRect(0, 0, width, height);
         graphics.drawImage(image, 0, 0, null);
+        if (style.showLabel && width >= 80 && height >= 24) drawLabel(graphics, width, height);
+    }
+
+    private void drawLabel(Graphics graphics, int width, int height) {
+        String[] fonts = {getFont() == null ? Font.DIALOG : getFont().getFamily(), "Microsoft YaHei", "SimSun", "Arial"};
+        Graphics text = graphics.create();
+        try {
+            text.setFont(new Font(fonts[style.labelFont], Font.PLAIN, 12));
+            text.setColor(style.labelColor);
+            text.clipRect(4, height - 20, width - 8, 20);
+            FontMetrics metrics = text.getFontMetrics();
+            String label = mode.toString();
+            if (metrics.stringWidth(label) > width - 8) {
+                int end = label.length();
+                while (end > 0 && metrics.stringWidth(label.substring(0, end) + "…") > width - 8) end--;
+                label = label.substring(0, end) + "…";
+            }
+            text.drawString(label, Math.max(4, (width - metrics.stringWidth(label)) / 2), height - 7);
+        } finally {
+            text.dispose();
+        }
     }
 
     private void ensureImage(int width, int height) {
@@ -172,6 +339,7 @@ public class TtVisualizer extends JComponent {
         renderedMode = null;
         classicSeconds = originalSeconds = feedbackSeconds = 0f;
         lastDataNanos = lastRenderNanos = 0L;
+        nextRenderNanos = 0;
         Arrays.fill(peaks, 0f);
         if (pixels != null) Arrays.fill(pixels, 0);
     }
@@ -364,7 +532,6 @@ public class TtVisualizer extends JComponent {
         if (renderedMode != mode) goom = null;
         if (goom == null) goom = new TtGoom2Visual();
         goom.render(pixels, canvasWidth, canvasHeight, spectrum.bars(), spectrum.waveform());
-        buildGoomPalette();
         for (int index = 0; index < pixels.length; index++) {
             int pixel = pixels[index];
             int brightness = (54 * (pixel >>> 16 & 255) + 183 * (pixel >>> 8 & 255) + 19 * (pixel & 255)) >> 8;

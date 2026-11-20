@@ -22,6 +22,8 @@ public class SnapUtils {
 
     // 每个窗口的吸附状态
     private static final Map<JFrame, WindowState> windowStates = new HashMap<>();
+    private static final AWTEventListener dragEvents = SnapUtils::handleDragEvent;
+    private static boolean dragEventsInstalled;
 
     // ====================================================================
     //  Data Structures
@@ -39,6 +41,7 @@ public class SnapUtils {
         List<JFrame> attachedBy = new ArrayList<>(); // 哪些窗口吸附到此窗口
         int pressX, pressY;    // 鼠标按下时的窗口位置
         int mouseOffsetX, mouseOffsetY; // 鼠标相对于窗口的偏移
+        MouseAdapter dragHandler;
     }
 
     private static class GroupDragState {
@@ -79,6 +82,10 @@ public class SnapUtils {
         for (WindowState otherState : windowStates.values()) {
             otherState.edges.removeIf(edge -> edge.target == window);
         }
+        if (windowStates.isEmpty() && dragEventsInstalled) {
+            Toolkit.getDefaultToolkit().removeAWTEventListener(dragEvents);
+            dragEventsInstalled = false;
+        }
     }
 
     public static void setupMainPlayerDrag(JFrame mainPlayer) {
@@ -106,8 +113,8 @@ public class SnapUtils {
                 if (canDrag) {
                     state.pressX = window.getX();
                     state.pressY = window.getY();
-                    state.mouseOffsetX = e.getX();
-                    state.mouseOffsetY = e.getY();
+                    state.mouseOffsetX = e.getXOnScreen() - window.getX();
+                    state.mouseOffsetY = e.getYOnScreen() - window.getY();
 
                     // 只有主窗口拖动时，才记录整个吸附组在拖动开始时的位置
                     if (isMainPlayer) {
@@ -147,26 +154,51 @@ public class SnapUtils {
 
             @Override
             public void mouseReleased(MouseEvent e) {
+                canDrag = false;
                 groupDragState = null;
             }
         };
 
-        window.addMouseListener(adapter);
-        window.addMouseMotionListener(adapter);
+        state.dragHandler = adapter;
+        if (!dragEventsInstalled) {
+            Toolkit.getDefaultToolkit().addAWTEventListener(dragEvents,
+                    AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK);
+            dragEventsInstalled = true;
+        }
+    }
+
+    private static void handleDragEvent(AWTEvent event) {
+        if (!(event instanceof MouseEvent)) return;
+        MouseEvent mouse = (MouseEvent) event;
+        if (mouse.getID() != MouseEvent.MOUSE_PRESSED && mouse.getID() != MouseEvent.MOUSE_DRAGGED
+                && mouse.getID() != MouseEvent.MOUSE_RELEASED) return;
+        Component source = mouse.getComponent();
+        if (source == null) return;
+        Window owner = source instanceof Window ? (Window) source : SwingUtilities.getWindowAncestor(source);
+        if (!(owner instanceof JFrame)) return;
+        JFrame window = (JFrame) owner;
+        WindowState state = windowStates.get(window);
+        if (state == null || state.dragHandler == null) return;
+        if (source != window && !SwingUtilities.isDescendingFrom(source, window.getContentPane())) return;
+        switch (mouse.getID()) {
+            case MouseEvent.MOUSE_PRESSED: state.dragHandler.mousePressed(mouse); break;
+            case MouseEvent.MOUSE_DRAGGED: state.dragHandler.mouseDragged(mouse); break;
+            case MouseEvent.MOUSE_RELEASED: state.dragHandler.mouseReleased(mouse); break;
+            default: break;
+        }
     }
 
     private static boolean canDragWindow(JFrame window, MouseEvent e) {
-        java.awt.Point p = e.getPoint();
-        Component comp = SwingUtilities.getDeepestComponentAt(window.getContentPane(), p.x, p.y);
-        // 具有内部拖拽语义的组件（如歌词滚动）：不作为窗口拖动
-        if (comp instanceof javax.swing.JComponent
-                && Boolean.TRUE.equals(((javax.swing.JComponent) comp).getClientProperty("innerDrag"))) {
-            return false;
+        if (!SwingUtilities.isLeftMouseButton(e) || Boolean.TRUE.equals(window.getRootPane().getClientProperty("independentLayout"))) return false;
+        java.awt.Point pointer = SwingUtilities.convertPoint(e.getComponent(), e.getPoint(), window.getContentPane());
+        Component comp = SwingUtilities.getDeepestComponentAt(window.getContentPane(), pointer.x, pointer.y);
+        for (Component current = comp; current != null; current = current.getParent()) {
+            if (!(current instanceof JPanel || current instanceof JLabel)) return false;
+            if (Boolean.TRUE.equals(((JComponent) current).getClientProperty("innerDrag"))) return false;
+            if (current == window.getContentPane()) break;
         }
         if (comp == null) return true;
-        if (comp instanceof JPanel) return true;
-        if (comp.getParent() != null && comp.getParent() instanceof JPanel) return true;
-        return false;
+        return comp instanceof JPanel || comp instanceof JLabel;
     }
 
     // ====================================================================
@@ -176,7 +208,7 @@ public class SnapUtils {
     private static void performSnap(JFrame movingWindow) {
         List<JFrame> possibleTargets = new ArrayList<>();
         for (JFrame w : allWindows) {
-            if (w != movingWindow) {
+            if (w != movingWindow && w.isVisible() && !Boolean.TRUE.equals(w.getRootPane().getClientProperty("independentLayout"))) {
                 possibleTargets.add(w);
             }
         }
@@ -313,7 +345,7 @@ public class SnapUtils {
         WindowState state = windowStates.get(window);
         if (state == null) return;
         for (JFrame attachedWindow : state.attachedBy) {
-            if (!collected.contains(attachedWindow)) {
+            if (attachedWindow.isVisible() && !Boolean.TRUE.equals(attachedWindow.getRootPane().getClientProperty("independentLayout")) && !collected.contains(attachedWindow)) {
                 collected.add(attachedWindow);
                 collectAttachedRecursive(attachedWindow, collected);
             }

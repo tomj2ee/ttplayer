@@ -58,6 +58,19 @@ public class FileDropController {
     public void handle(List<File> files) {
         if (files == null || files.isEmpty()) return;
 
+        for (File file : files) {
+            if (file != null && file.isFile() && file.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".lrc")) {
+                javax.swing.SwingUtilities.invokeLater(() -> {
+                    try { hub.getLyric().loadLocalLyrics(file); }
+                    catch (java.io.IOException error) {
+                        javax.swing.JOptionPane.showMessageDialog(hub.getLyric(), error.getMessage(),
+                                org.ttplayer.util.Messages.get("lyric.title"), javax.swing.JOptionPane.ERROR_MESSAGE);
+                    }
+                });
+                return;
+            }
+        }
+
         // .skn 皮肤文件 → 直接换肤（换肤会销毁重建窗口，延后到拖放事件结束再执行）
         for (File f : files) {
             if (f != null && f.getName().toLowerCase().endsWith(".skn")) {

@@ -145,6 +145,7 @@ public class TtSkin {
     }
 
     public byte[] getBmp(String name) {
+        if (name == null || name.isEmpty()) return null;
         byte[] data = files.get(name);
 
         // 如果皮肤目录没有，尝试从resources/ico目录读取

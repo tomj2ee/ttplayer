@@ -6,8 +6,6 @@ import org.ttplayer.ui.*;
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
-import java.util.ArrayList;
 import java.util.List;
 
 public class WindowLayoutUtils {
@@ -41,13 +39,7 @@ public class WindowLayoutUtils {
 
     public static void setWindowIcon(javax.swing.JFrame window, TtSkin skin) {
         try {
-            ClassLoader cl = WindowLayoutUtils.class.getClassLoader();
-            List<java.awt.Image> icons = new ArrayList<>();
-
-            // 尝试加载多个尺寸的图标
-            tryLoadIcon(cl, "ico/ttplayer_16x16_32bpp.png", 16, icons);
-            tryLoadIcon(cl, "ico/ttplayer_32x32_32bpp.png", 32, icons);
-            tryLoadIcon(cl, "ico/ttplayer_48x48_32bpp.png", 48, icons);
+            List<java.awt.Image> icons = AppIcons.getWindowImages();
 
             // 如果没有加载到图标，尝试从皮肤加载
             if (icons.isEmpty() && skin != null) {
@@ -75,18 +67,6 @@ public class WindowLayoutUtils {
                 try {
                     setMacDockIcon(icons);
                 } catch (Exception ignored) {}
-            }
-        } catch (Exception ignored) {}
-    }
-
-    private static void tryLoadIcon(ClassLoader cl, String path, int size, List<java.awt.Image> icons) {
-        try {
-            InputStream is = cl.getResourceAsStream(path);
-            if (is != null) {
-                java.awt.image.BufferedImage img = ImageIO.read(is);
-                if (img != null) {
-                    icons.add(img);
-                }
             }
         } catch (Exception ignored) {}
     }

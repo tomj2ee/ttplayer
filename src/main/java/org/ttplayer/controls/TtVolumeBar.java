@@ -30,11 +30,13 @@ public class TtVolumeBar extends javax.swing.JComponent {
         addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
+                if (!isEnabled() || !javax.swing.SwingUtilities.isLeftMouseButton(e)) return;
                 updateValue(e.getX());
                 dragging = true;
             }
             @Override
             public void mouseReleased(MouseEvent e) {
+                if (!dragging || !javax.swing.SwingUtilities.isLeftMouseButton(e)) return;
                 dragging = false;
                 if (listener != null) listener.onVolumeChanged(value);
             }
@@ -42,7 +44,10 @@ public class TtVolumeBar extends javax.swing.JComponent {
         addMouseMotionListener(new MouseAdapter() {
             @Override
             public void mouseDragged(MouseEvent e) {
-                updateValue(e.getX());
+                if (dragging) {
+                    updateValue(e.getX());
+                    if (listener != null) listener.onVolumeChanged(value);
+                }
             }
         });
     }

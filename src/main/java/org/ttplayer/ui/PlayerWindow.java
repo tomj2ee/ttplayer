@@ -1,6 +1,7 @@
 package org.ttplayer.ui;
 
 import org.ttplayer.audio.TtVisualizer;
+import org.ttplayer.audio.TtVisualSettings;
 import org.ttplayer.controls.TtButton;
 import org.ttplayer.controls.TtLed;
 import org.ttplayer.controls.TtTrackBar;
@@ -16,12 +17,13 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import org.ttplayer.util.Messages;
+import org.ttplayer.util.MenuSettings;
 
 public class PlayerWindow extends SkinWindow {
     private static final Logger log = LoggerFactory.getLogger(PlayerWindow.class);
 
     public TtButton btnPlay, btnPause, btnStop, btnPrev, btnNext, btnMute;
-    public TtButton btnOpen, btnLyric, btnEqualizer, btnPlaylist, btnBrowser;
+    public TtButton btnOpen, btnLyric, btnEqualizer, btnPlaylist;
     public TtButton btnMinimize, btnExit, btnMiniMode;
     public TtButton btnModeSingle, btnModeLoop, btnModeSlider, btnModeCircle, btnModeRandom;
     public TtButton btnSet, btnDeskLrc;
@@ -29,13 +31,13 @@ public class PlayerWindow extends SkinWindow {
     private TtTrackBar progressBar;
     private TtVolumeBar volumeBar;
     private TtVisualizer visualizer;
+    public TtVisualizer getVisualizer() { return visualizer; }
     private TtLed ledLabel;
     private JLabel infoLabel;
     private JLabel statusLabel;
     private JLabel iconLabel;
 
     private final PlayerEngine playerEngine;
-    private boolean showRemainingTime;
     private Runnable onToggleMiniMode;
     private Runnable onHideToTray;
 
@@ -67,8 +69,10 @@ public class PlayerWindow extends SkinWindow {
         Timer updateTimer = new Timer(200, e -> doUpdate());
         updateTimer.start();
 
-        // 频谱独立高频刷新（~50fps），不依赖 200ms 的 UI 更新节奏
-        Timer visualTimer = new Timer(20, e -> refreshSpectrum());
+        Timer visualTimer = new Timer(TtVisualSettings.frameDelay(), event -> {
+            ((Timer) event.getSource()).setDelay(TtVisualSettings.frameDelay());
+            refreshSpectrum();
+        });
         visualTimer.start();
 
         // 添加主窗口监听器
@@ -138,7 +142,6 @@ public class PlayerWindow extends SkinWindow {
                 case "equalizer":   btnEqualizer = createButton(c); tip(btnEqualizer, org.ttplayer.util.Messages.get("menu.equalizer")); break;
                 case "eq":          btnEqualizer = createButton(c); tip(btnEqualizer, org.ttplayer.util.Messages.get("menu.equalizer")); break;
                 case "playlist":    btnPlaylist = createButton(c); tip(btnPlaylist, org.ttplayer.util.Messages.get("playlist.title")); break;
-                case "browser":     btnBrowser = createButton(c); tip(btnBrowser, org.ttplayer.util.Messages.get("tooltip.browser")); break;
                 case "desklrc_bar":
                 case "desklrc":     btnDeskLrc = createButton(c); tip(btnDeskLrc, org.ttplayer.util.Messages.get("menu.desktopLyric")); break;
                 case "minimize":    btnMinimize = createButton(c); tip(btnMinimize, org.ttplayer.util.Messages.get("tooltip.minimize")); break;
@@ -215,7 +218,10 @@ public class PlayerWindow extends SkinWindow {
                         ledLabel.addMouseListener(new java.awt.event.MouseAdapter() {
                             @Override
                             public void mouseClicked(java.awt.event.MouseEvent e) {
-                                   showRemainingTime = !showRemainingTime;
+                                if (SwingUtilities.isLeftMouseButton(e)) {
+                                    MenuSettings.set("remainingTime", !MenuSettings.flag("remainingTime", false));
+                                    updateLedTime();
+                                }
                             }
                         });
                     }
@@ -237,7 +243,7 @@ public class PlayerWindow extends SkinWindow {
         if (btnStop != null) {
             btnStop.addActionListener(e -> {
                 if (playerEngine != null) playerEngine.stop();
-                if (ledLabel != null) ledLabel.setText("00:00");
+                updateLedTime();
                 if (progressBar != null) progressBar.setValue(0);
             });
         }
@@ -261,17 +267,10 @@ public class PlayerWindow extends SkinWindow {
             getContentPane().setComponentZOrder(ledLabel, 0);
         }
 
-        // 右键菜单 —— 添加在 JFrame 上，不干扰 SnapUtils 的拖拽监听
-        addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mousePressed(java.awt.event.MouseEvent e) {
-                if (e.isPopupTrigger()) showPlayerRightClickMenu(e);
-            }
-            @Override
-            public void mouseReleased(java.awt.event.MouseEvent e) {
-                if (e.isPopupTrigger()) showPlayerRightClickMenu(e);
-            }
-        });
+    }
+
+    public void setMenuActions(TtMenuCatalog.Actions actions) {
+        TtMenuCatalog.attachContext(this, TtMenuCatalog.Kind.MAIN, actions);
     }
 
     private void showPlayerRightClickMenu(java.awt.event.MouseEvent e) {
@@ -360,14 +359,6 @@ public class PlayerWindow extends SkinWindow {
         visualizer = new TtVisualizer();
         visualizer.setBounds(ctl.left, ctl.top, ctl.right - ctl.left, ctl.bottom - ctl.top);
         loadVisualizerSkinStyle();
-        visualizer.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mousePressed(java.awt.event.MouseEvent e) {
-                if (javax.swing.SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 1) {
-                    visualizer.cycleMode();
-                }
-            }
-        });
         getContentPane().add(visualizer);
         addControl(visualizer, ctl);
     }
@@ -437,21 +428,8 @@ public class PlayerWindow extends SkinWindow {
     }
 
     private void tryLoadFallbackIcon(TtSkin.Ctl ctl) {
-        try {
-            ClassLoader cl = getClass().getClassLoader();
-            java.io.InputStream is = cl.getResourceAsStream("ico/ttplayer_16x16_32bpp.png");
-            if (is != null) {
-                BufferedImage img = javax.imageio.ImageIO.read(is);
-                if (img != null) {
-//                    int w = ctl.right - ctl.left;
-//                    int h = ctl.bottom - ctl.top;
-                    Image scaled = img.getScaledInstance(img.getWidth(), img.getHeight(), Image.SCALE_SMOOTH);
-                    iconLabel.setIcon(new ImageIcon(scaled));
-                }
-            }
-        } catch (Exception e) {
-            log.error("Could not load fallback PNG icon: {}", e.getMessage(), e);
-        }
+        BufferedImage image = org.ttplayer.util.AppIcons.getImage(16);
+        if (image != null) iconLabel.setIcon(new ImageIcon(image));
     }
 
     private ImageIcon loadIco(byte[] icoData) {
@@ -509,10 +487,16 @@ public class PlayerWindow extends SkinWindow {
         if (comp != null) comp.setToolTipText(text);
     }
 
+    private void updateLedTime() {
+        if (ledLabel != null) ledLabel.setText(TtLed.formatTime(playerEngine == null ? 0 : playerEngine.getPositionMs(),
+                playerEngine == null ? 0 : playerEngine.getDuration() * 1000L, MenuSettings.flag("remainingTime", false)));
+    }
+
     private void doUpdate() {
         if (playerEngine == null) return;
         try {
             boolean playing = playerEngine.isPlaying();
+            updateLedTime();
 
             if (btnPlay != null && btnPause != null) {
                 btnPlay.setVisible(!playing);
@@ -522,14 +506,6 @@ public class PlayerWindow extends SkinWindow {
             if (playing) {
                 int pos = playerEngine.getPosition();
                 int dur = playerEngine.getDuration();
-                if (ledLabel != null) {
-                    if (showRemainingTime && dur > 0) {
-                        int rem = Math.max(0, dur - pos);
-                        ledLabel.setText(String.format("-%02d:%02d", rem / 60, rem % 60));
-                    } else {
-                        ledLabel.setText(String.format("%02d:%02d", pos / 60, pos % 60));
-                    }
-                }
                 if (progressBar != null && !progressBar.isDragging()) {
                     if (dur > 0) {
                         progressBar.setRange(dur);

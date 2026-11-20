@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import org.ttplayer.engine.PlayerEngine;
 import org.ttplayer.model.PlaylistConfig;
 import org.ttplayer.model.Song;
-import org.ttplayer.util.SongUtils;
 
 import javax.swing.*;
 
@@ -26,15 +25,17 @@ public class PlayerEventListener {
             if (hub.getPlaylistManager() != null) {
                 int idx = hub.getPlayerEngine() != null ? hub.getPlayerEngine().getCurrentSongIndex() : -1;
                 PlaylistConfig.save(hub.getPlaylistManager(), idx);
+                hub.getPlayerEngine().savePlaybackPosition();
             }
         });
-        playbackSaveTimer.setRepeats(false);
+        playbackSaveTimer.setRepeats(true);
     }
 
     public void install() {
         hub.getPlayerEngine().setListener(new PlayerEngine.PlayerEngineListener() {
             @Override
             public void onPlaybackStarted(Song song) {
+                if (song != hub.getPlayerEngine().getCurrentSong()) return;
                 String info = (song.artist != null ? song.artist + " - " : "") +
                               (song.title != null ? song.title : "");
                 hub.getPlayer().setSongInfo(info);
@@ -46,18 +47,9 @@ public class PlayerEventListener {
                 hub.tray.updateToolTip(info);
 
                 hub.getLyric().loadLyrics(song);
-                if (hub.getDesktopLyric() != null) hub.getDesktopLyric().loadLyrics(song);
-
-                org.ttplayer.lyrics.LyricAutoDownloader.searchAndDownload(
-                    song, s -> hub.getLyric().loadLyrics(s));
-
-                if (hub.isMiniMode() && hub.getMiniWindow() != null) {
-                    int duration = hub.getPlayerEngine().getDuration();
-                    String format = song.filePath != null ? SongUtils.getFileExtension(song.filePath).toUpperCase() : "";
-                    hub.getMiniWindow().updateSongInfo(
-                        song.title != null ? song.title : song.getFileName(),
-                        song.artist, song.album, format, duration
-                    );
+                if (hub.getMiniWindow() != null) {
+                    hub.getMiniWindow().setDisplayText(null);
+                    hub.getMiniWindow().refreshPlaybackState();
                 }
 
                 playbackSaveTimer.restart();
@@ -65,40 +57,47 @@ public class PlayerEventListener {
 
             @Override
             public void onPlaybackStopped() {
+                playbackSaveTimer.stop();
                 hub.getPlayer().setSongInfo("");
                 hub.getPlayer().setStatusInfo(org.ttplayer.util.Messages.get("status.stopped"));
                 hub.tray.updateToolTip(org.ttplayer.util.Messages.get("status.stopped"));
 
                 if (hub.isMiniMode() && hub.getMiniWindow() != null) {
-                    hub.getMiniWindow().setDisplayText(org.ttplayer.util.Messages.get("status.stopped"));
+                    hub.getMiniWindow().refreshPlaybackState();
                 }
+                hub.getLyric().advanceCoverAnimation();
             }
 
             @Override
             public void onPlaybackPaused() {
+                hub.getPlayerEngine().savePlaybackPosition();
+                playbackSaveTimer.stop();
+                hub.getLyric().advanceCoverAnimation();
+                hub.getMiniWindow().refreshPlaybackState();
                 hub.getPlayer().setStatusInfo(org.ttplayer.util.Messages.get("status.paused"));
                 hub.tray.updateToolTip(org.ttplayer.util.Messages.get("status.paused"));
             }
 
             @Override
             public void onPlaybackResumed() {
+                playbackSaveTimer.restart();
+                hub.getLyric().advanceCoverAnimation();
+                hub.getMiniWindow().refreshPlaybackState();
                 hub.getPlayer().setStatusInfo(org.ttplayer.util.Messages.get("status.playing"));
             }
 
             @Override
             public void onPlaybackComplete() {
-                int nextIdx = hub.getPlayerEngine().getCurrentSongIndex() + 1;
-                if (hub.getPlaylistManager() != null &&
-                    hub.getPlaylistManager().getCurrentPlaylist() != null &&
-                    nextIdx < hub.getPlaylistManager().getCurrentPlaylist().songs.size()) {
-                    hub.getPlayerEngine().play(nextIdx);
-                }
+                playbackSaveTimer.stop();
+                hub.getPlayerEngine().advanceAfterPlayback();
             }
 
             @Override
             public void onPlaybackError(String error) {
                 log.error("{} {}", org.ttplayer.util.Messages.get("player.errorPrefix"), error);
                 hub.tray.updateToolTip(org.ttplayer.util.Messages.get("player.errorPrefix") + error);
+                playbackSaveTimer.stop();
+                hub.getPlayerEngine().advanceAfterError();
             }
         });
     }

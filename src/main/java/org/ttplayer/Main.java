@@ -7,7 +7,7 @@ public class Main {
         setSystemProperties();
 
         // 现在加载应用
-        new TTPlayerApplication().start();
+        new TTPlayerApplication().start(args);
     }
 
     private static void setSystemProperties() {

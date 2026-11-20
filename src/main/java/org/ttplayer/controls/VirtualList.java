@@ -163,14 +163,36 @@ public class VirtualList extends JComponent implements Scrollable {
 
     public int getSelectedIndex() {
         if (selectedIndices.isEmpty()) return -1;
-        return selectedIndices.iterator().next();
+        if (selectedIndices.contains(leadIndex)) return leadIndex;
+        return java.util.Collections.min(selectedIndices);
     }
 
     public int[] getSelectedIndices() {
         int[] arr = new int[selectedIndices.size()];
         int i = 0;
         for (int idx : selectedIndices) arr[i++] = idx;
+        java.util.Arrays.sort(arr);
         return arr;
+    }
+
+    public boolean isSelectedIndex(int index) { return selectedIndices.contains(index); }
+    public void setLeadSelectionIndex(int index) { if (selectedIndices.contains(index)) { leadIndex = index; repaint(); } }
+
+    public void selectAll() {
+        selectedIndices.clear();
+        for (int index = 0; index < items.size(); index++) selectedIndices.add(index);
+        anchorIndex = items.isEmpty() ? -1 : 0;
+        leadIndex = items.size() - 1;
+        repaint();
+    }
+
+    public void invertSelection() {
+        for (int index = 0; index < items.size(); index++) {
+            if (!selectedIndices.remove(index)) selectedIndices.add(index);
+        }
+        leadIndex = getSelectedIndex();
+        anchorIndex = leadIndex;
+        repaint();
     }
 
     public void setSelectedIndex(int index) {
@@ -205,6 +227,8 @@ public class VirtualList extends JComponent implements Scrollable {
             mouseClickListener.onPopupTrigger(e, row);
             return;
         }
+
+        if (!SwingUtilities.isLeftMouseButton(e)) return;
 
         if (row >= 0 && row < items.size()) {
             if (e.isControlDown()) {

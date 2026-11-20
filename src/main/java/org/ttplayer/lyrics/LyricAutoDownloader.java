@@ -7,7 +7,6 @@ import org.ttplayer.util.SongUtils;
 
 import javax.swing.*;
 import java.io.File;
-import java.io.PrintWriter;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -23,34 +22,31 @@ public class LyricAutoDownloader {
     /**
      * 若歌曲缺歌词则后台搜索下载；下载成功回调 onDownloaded。
      */
-    public static void searchAndDownload(Song song, Consumer<Song> onDownloaded) {
-        if (song == null || song.filePath == null) return;
+    public static SwingWorker<Boolean, Void> searchAndDownload(Song song, Consumer<Song> onDownloaded) {
+        if (song == null || song.filePath == null) return null;
 
-        final File audioFile = new File(song.filePath);
-        File lrcFile = LRCParser.findLRCFile(audioFile);
-        if (lrcFile != null && lrcFile.exists()) return;
+        File lrcFile = LyricsRepository.find(song);
+        if (lrcFile != null && lrcFile.exists()) {
+            try { if (!new LRCParser().parse(lrcFile).lines.isEmpty()) return null; }
+            catch (java.io.IOException ignored) {}
+        }
 
         String keyword = SongUtils.buildSearchKeyword(song);
-        if (keyword.trim().isEmpty()) return;
+        if (keyword.trim().isEmpty()) return null;
 
         SwingWorker<Boolean, Void> worker = new SwingWorker<Boolean, Void>() {
             @Override
             protected Boolean doInBackground() {
                 try {
                     List<SongResult> results = LyricSearchService.searchSong(keyword, 10);
-                    if (results.isEmpty()) return false;
+                    if (results.isEmpty() || isCancelled()) return false;
 
                     SongResult selected = results.get(0);
                     String lrcText = LyricSearchService.getLyricByMid(selected.getMid());
-                    if (lrcText.trim().isEmpty()) return false;
+                    if (lrcText.trim().isEmpty() || isCancelled()) return false;
 
-                    String path = audioFile.getAbsolutePath();
-                    int dot = path.lastIndexOf('.');
-                    String lrcPath = (dot > 0 ? path.substring(0, dot) : path) + ".lrc";
-
-                    try (PrintWriter w = new PrintWriter(lrcPath, "UTF-8")) {
-                        w.print(lrcText);
-                    }
+                    if (new LRCParser().parse(lrcText).lines.isEmpty() || isCancelled()) return false;
+                    LyricsRepository.store(song, lrcText, null, true);
                     return true;
                 } catch (Exception e) {
                     log.error("Failed to search/download lyrics for {}", song.filePath, e);
@@ -60,6 +56,7 @@ public class LyricAutoDownloader {
 
             @Override
             protected void done() {
+                if (isCancelled()) return;
                 try {
                     if (get() && onDownloaded != null) {
                         onDownloaded.accept(song);
@@ -68,5 +65,6 @@ public class LyricAutoDownloader {
             }
         };
         worker.execute();
+        return worker;
     }
 }

@@ -27,28 +27,38 @@ public class LRCParser {
     }
 
     public LRCData parse(File file) throws IOException {
-        return parse(file, detectCharset(file));
+        return parse(file, true);
+    }
+
+    public LRCData parse(File file, boolean trim) throws IOException {
+        if (Files.size(file.toPath()) > LyricsRepository.MAX_BYTES) throw new IOException("LRC exceeds 4 MiB");
+        return parseLines(Files.readAllLines(file.toPath(), detectCharset(file)), trim);
     }
 
     public LRCData parse(File file, Charset charset) throws IOException {
+        if (Files.size(file.toPath()) > LyricsRepository.MAX_BYTES) throw new IOException("LRC exceeds 4 MiB");
         List<String> lines = Files.readAllLines(file.toPath(), charset);
-        return parseLines(lines);
+        return parseLines(lines, true);
     }
 
     public LRCData parse(String content) {
-        return parseLines(Arrays.asList(content.split("\\r?\\n")));
+        return parse(content, true);
     }
 
-    private LRCData parseLines(List<String> lines) {
+    public LRCData parse(String content, boolean trim) {
+        return parseLines(Arrays.asList(content.split("\\r?\\n")), trim);
+    }
+
+    private LRCData parseLines(List<String> lines, boolean trim) {
         LRCData data = new LRCData();
         offsetMs = 0;
         List<LRCLine> allLines = new ArrayList<>();
 
         for (String line : lines) {
-            line = line.trim();
-            if (line.isEmpty()) continue;
+            line = line.replace("\uFEFF", "");
+            if (line.trim().isEmpty()) continue;
 
-            Matcher idMatcher = ID_TAG.matcher(line);
+            Matcher idMatcher = ID_TAG.matcher(line.trim());
             if (idMatcher.matches()) {
                 String tag = idMatcher.group(1).toLowerCase();
                 String value = idMatcher.group(2).trim();
@@ -57,7 +67,8 @@ public class LRCParser {
                     case "ar": data.artist = value; break;
                     case "al": data.album = value; break;
                     case "offset":
-                        try { offsetMs = Long.parseLong(value); } catch (NumberFormatException ignored) {}
+                        try { offsetMs = Math.max(-3600000, Math.min(3600000, Long.parseLong(value))); }
+                        catch (NumberFormatException ignored) {}
                         break;
                 }
                 continue;
@@ -72,29 +83,29 @@ public class LRCParser {
             Matcher lastTag = LRC_TAG.matcher(line);
             int lastEnd = -1;
             while (lastTag.find()) lastEnd = lastTag.end();
-            if (lastEnd >= 0) trailingText = line.substring(lastEnd).trim();
+            if (lastEnd >= 0) trailingText = trim ? line.substring(lastEnd).trim() : line.substring(lastEnd);
 
             while (matcher.find()) {
-                int minutes = Integer.parseInt(matcher.group(1));
+                double minutes = Double.parseDouble(matcher.group(1));
                 String secStr = matcher.group(2);
                 long timeMs;
                 if (secStr.contains(".")) {
                     double seconds = Double.parseDouble(secStr);
-                    timeMs = (long) (minutes * 60000 + seconds * 1000);
+                    timeMs = (long) Math.min(Long.MAX_VALUE, minutes * 60000 + seconds * 1000);
                 } else {
-                    timeMs = minutes * 60000 + Long.parseLong(secStr) * 1000;
+                    timeMs = (long) Math.min(Long.MAX_VALUE, minutes * 60000 + Double.parseDouble(secStr) * 1000);
                 }
-                timeMs += offsetMs;
                 if (timeMs < 0) timeMs = 0;
 
                 int start = matcher.end();
                 Matcher nextMatcher = LRC_TAG.matcher(line);
                 String text;
                 if (nextMatcher.find(matcher.end())) {
-                    text = line.substring(start, nextMatcher.start()).trim();
+                    text = line.substring(start, nextMatcher.start());
                 } else {
-                    text = line.substring(start).trim();
+                    text = line.substring(start);
                 }
+                if (trim) text = text.trim();
                 if (text.isEmpty() && !trailingText.isEmpty()) text = trailingText;
                 // 空文本条目也保留：它标记上一句的结束时间（间奏起点），
                 // 显示层负责隐藏它，但时间间隔不能被丢掉
@@ -142,6 +153,8 @@ public class LRCParser {
                 return Charset.forName("UTF-8");
             if (read >= 2 && bom[0] == (byte) 0xFF && bom[1] == (byte) 0xFE)
                 return Charset.forName("UTF-16LE");
+            if (read >= 2 && bom[0] == (byte) 0xFE && bom[1] == (byte) 0xFF)
+                return Charset.forName("UTF-16BE");
         }
         try {
             byte[] bytes = Files.readAllBytes(file.toPath());

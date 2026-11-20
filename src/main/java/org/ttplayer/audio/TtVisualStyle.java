@@ -12,4 +12,25 @@ final class TtVisualStyle {
     int blurSpeed = 3;
     boolean blur = true;
     boolean wide;
+    int fps = 25;
+    boolean showLabel;
+    Color labelColor = Color.WHITE;
+    int labelFont;
+
+    TtVisualStyle copy() {
+        TtVisualStyle result = new TtVisualStyle();
+        result.top = top;
+        result.middle = middle;
+        result.bottom = bottom;
+        result.peak = peak;
+        result.scope = scope;
+        result.blurSpeed = blurSpeed;
+        result.blur = blur;
+        result.wide = wide;
+        result.fps = fps;
+        result.showLabel = showLabel;
+        result.labelColor = labelColor;
+        result.labelFont = labelFont;
+        return result;
+    }
 }
