@@ -43,6 +43,9 @@ public class PlayerEngine {
 
     private volatile long positionUs;
     private volatile long durationUs;
+    private volatile boolean videoPlayback;
+    private final VideoFrameBuffer videoFrames = new VideoFrameBuffer();
+    private final VideoClock videoClock = new VideoClock();
 
     // 频谱分析用单声道环形缓冲（立体声左右平均，对应 C 的 pcm_push）
     // 容量 16384 单声道帧（≈372ms），需容纳音频输出缓冲 + 分析窗，以便做播放位置对齐。
@@ -297,6 +300,15 @@ public class PlayerEngine {
             long lenUs = grabber.getLengthInTime();
             durationUs = lenUs > 0 ? lenUs : 0;
 
+            if (grabber.hasVideo() && (grabber.getFormatContext().streams(grabber.getVideoStream()).disposition()
+                    & org.bytedeco.ffmpeg.global.avformat.AV_DISPOSITION_ATTACHED_PIC) == 0) {
+                videoPlayback = true;
+                videoFrames.configure(grabber.getImageWidth(), grabber.getImageHeight(),
+                        grabber.getAspectRatio(), grabber.getDisplayRotation());
+                completed = decodeVideo(grabber, revision, trackGain);
+                return;
+            }
+
             AudioFormat fmt = new AudioFormat(44100, 16, 2, true, false);
             dl = (SourceDataLine) AudioSystem.getLine(new DataLine.Info(SourceDataLine.class, fmt));
             dl.open(fmt, Math.max(4, (44100 * openedBufferMs / 1000) * 4));
@@ -437,17 +449,130 @@ public class PlayerEngine {
         }
     }
 
+    private boolean decodeVideo(FFmpegFrameGrabber grabber, long revision, TrackReplayGain trackGain) throws Exception {
+        SourceDataLine output = null;
+        try {
+            if (grabber.hasAudio()) {
+                AudioFormat format = new AudioFormat(44100, 16, 2, true, false);
+                output = (SourceDataLine) AudioSystem.getLine(new DataLine.Info(SourceDataLine.class, format));
+                output.open(format, 44100 / 5 * 4);
+                if (stopped || playbackRevision != revision) return false;
+                line = output;
+                applyVolume();
+                if (!paused) output.start();
+            }
+            videoClock.reset(0, paused);
+            final Song startSong = currentSong;
+            SwingUtilities.invokeLater(() -> {
+                if (playbackRevision == revision && listener != null && startSong != null) {
+                    listener.onPlaybackStarted(startSong);
+                }
+            });
+            boolean preview = false;
+            long minimumTimestamp = 0;
+            long fadeFrame = 0;
+            while (playing && !stopped && playbackRevision == revision) {
+                if (seekRequested) {
+                    long target;
+                    synchronized (stateLock) {
+                        target = Math.max(0, durationUs > 0 ? Math.min(seekTargetUs, durationUs - 1000) : seekTargetUs);
+                        seekRequested = false;
+                    }
+                    grabber.setTimestamp(target);
+                    if (output != null) output.flush();
+                    positionUs = target;
+                    minimumTimestamp = target;
+                    videoClock.reset(target, paused);
+                    preview = paused;
+                    fadeFrame = 0;
+                }
+                synchronized (stateLock) {
+                    while (paused && !preview && !seekRequested && !stopped && playbackRevision == revision) {
+                        stateLock.wait();
+                    }
+                }
+                if (seekRequested) continue;
+                if (stopped || playbackRevision != revision) return false;
+                Frame frame = grabber.grab();
+                if (frame == null) break;
+                long timestamp = Math.max(0, frame.timestamp);
+                if (timestamp < minimumTimestamp || preview && frame.image == null) continue;
+                if (!preview && !awaitVideoTimestamp(timestamp, revision)) continue;
+                if (stopped || playbackRevision != revision || seekRequested) continue;
+                if (frame.image != null) {
+                    videoFrames.update(frame);
+                    if (preview) {
+                        videoClock.reset(timestamp, true);
+                        preview = false;
+                    }
+                    consecutiveErrors = 0;
+                }
+                if (!paused && output != null && frame.samples != null && frame.samples.length > 0
+                        && frame.samples[0] instanceof ShortBuffer) {
+                    ShortBuffer samples = ((ShortBuffer) frame.samples[0]).duplicate();
+                    int count = samples.remaining();
+                    byte[] pcm = new byte[count * 2];
+                    for (int sampleIndex = 0; sampleIndex < count; sampleIndex++) {
+                        short sample = samples.get();
+                        pcm[sampleIndex * 2] = (byte) sample;
+                        pcm[sampleIndex * 2 + 1] = (byte) (sample >> 8);
+                    }
+                    equalizer.process(pcm);
+                    PlaybackSettings.get().process(pcm, fadeFrame, 2, 44100,
+                            trackGain.decibels, trackGain.peak, trackGain.isTagged());
+                    fadeFrame += count / 2;
+                    output.write(pcm, 0, pcm.length);
+                }
+                positionUs = timestamp;
+            }
+            boolean completed = !stopped && playbackRevision == revision;
+            if (completed) {
+                if (durationUs > 0) awaitVideoTimestamp(durationUs, revision);
+                if (output != null && !stopped && playbackRevision == revision) output.drain();
+                positionUs = durationUs;
+            }
+            return completed && !stopped && playbackRevision == revision;
+        } finally {
+            if (output != null) {
+                try { output.stop(); output.close(); } catch (Exception ignored) {}
+                if (line == output) line = null;
+            }
+        }
+    }
+
+    private boolean awaitVideoTimestamp(long timestamp, long revision) throws InterruptedException {
+        synchronized (stateLock) {
+            while (!stopped && playbackRevision == revision && !seekRequested) {
+                if (paused) {
+                    stateLock.wait();
+                    continue;
+                }
+                long remaining = timestamp - videoClock.positionUs();
+                if (remaining <= 0) return true;
+                stateLock.wait(Math.max(1, Math.min(20, remaining / 1000)));
+            }
+        }
+        return false;
+    }
+
     // ==================== 通用方法 ====================
 
     private void pausePlayback() {
         paused = true;
-        if (line != null && line.isRunning()) line.flush();
+        if (videoPlayback) {
+            videoClock.pause();
+            if (line != null && line.isRunning()) line.stop();
+        } else if (line != null && line.isRunning()) line.flush();
         SwingUtilities.invokeLater(() -> {
             if (listener != null) listener.onPlaybackPaused();
         });
     }
 
     private void resumePlayback() {
+        if (videoPlayback) {
+            videoClock.resume();
+            if (line != null && line.isOpen()) line.start();
+        }
         paused = false;
         synchronized (stateLock) { stateLock.notifyAll(); }
         applyVolume();
@@ -483,6 +608,9 @@ public class PlayerEngine {
             try { line.stop(); line.close(); } catch (Exception ignored) {}
         }
         line = null;
+        videoPlayback = false;
+        videoClock.pause();
+        videoFrames.clear();
         positionUs = 0;
         synchronized (vizLock) {
             vizHead = 0;
@@ -532,6 +660,8 @@ public class PlayerEngine {
 
     public boolean isPaused() { return paused; }
     public boolean isPlaying() { return playing; }
+    public boolean isVideoPlayback() { return videoPlayback; }
+    public VideoFrameBuffer getVideoFrames() { return videoFrames; }
 
     /** 频谱重置世代号：换曲/停止时自增。界面侧比对它即可捕获瞬时清屏时机。 */
     public int getVizResetGen() { return vizResetGen; }
@@ -539,8 +669,11 @@ public class PlayerEngine {
     public Song getCurrentSong() { return currentSong; }
     public int getVolumePercent() { return volumePercent; }
     public int getDuration() { return (int) (durationUs / 1000000); }
-    public long getPositionMs() { return positionUs / 1000; }
-    public int getPosition() { return (int) (positionUs / 1000000); }
+    public long getPositionMs() {
+        long position = videoPlayback && playing && !seekRequested ? videoClock.positionUs() : positionUs;
+        return Math.max(0, durationUs > 0 ? Math.min(position, durationUs) : position) / 1000;
+    }
+    public int getPosition() { return (int) (getPositionMs() / 1000); }
 
     public Equalizer getEqualizer() { return equalizer; }
 

@@ -92,7 +92,11 @@ public class SkinScrollBarUI extends BasicScrollBarUI {
 
     @Override
     protected Dimension getMaximumThumbSize() {
-        return new Dimension(super.getMaximumThumbSize().width, MAXIMUM_THUMB_HEIGHT);
+        Dimension maximum = super.getMaximumThumbSize();
+        if (scrollbar.getVisibleAmount() >= (long) scrollbar.getMaximum() - scrollbar.getMinimum()) {
+            return maximum;
+        }
+        return new Dimension(maximum.width, MAXIMUM_THUMB_HEIGHT);
     }
 
 
