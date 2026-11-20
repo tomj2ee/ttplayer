@@ -4,9 +4,12 @@ import org.ttplayer.audio.TtVisualizer;
 import org.ttplayer.audio.TtVisualSettings;
 import org.ttplayer.controls.TtButton;
 import org.ttplayer.controls.TtLed;
+import org.ttplayer.controls.TtSongInfo;
 import org.ttplayer.controls.TtTrackBar;
 import org.ttplayer.controls.TtVolumeBar;
 import org.ttplayer.engine.PlayerEngine;
+import org.ttplayer.engine.AudioSourceInfo;
+import org.ttplayer.model.Song;
 import org.ttplayer.skin.TtSkin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,6 +21,8 @@ import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import org.ttplayer.util.Messages;
 import org.ttplayer.util.MenuSettings;
+import org.ttplayer.util.SongInformation;
+import java.util.Collections;
 
 public class PlayerWindow extends SkinWindow {
     private static final Logger log = LoggerFactory.getLogger(PlayerWindow.class);
@@ -33,9 +38,13 @@ public class PlayerWindow extends SkinWindow {
     private TtVisualizer visualizer;
     public TtVisualizer getVisualizer() { return visualizer; }
     private TtLed ledLabel;
-    private JLabel infoLabel;
+    private TtSongInfo infoLabel;
     private JLabel statusLabel;
+    private JLabel stereoLabel;
     private JLabel iconLabel;
+    private Song informationSong;
+    private final Timer updateTimer;
+    private final Timer visualTimer;
 
     private final PlayerEngine playerEngine;
     private Runnable onToggleMiniMode;
@@ -66,10 +75,10 @@ public class PlayerWindow extends SkinWindow {
             setMinSize(268, 165);
         }
 
-        Timer updateTimer = new Timer(200, e -> doUpdate());
+        updateTimer = new Timer(200, e -> doUpdate());
         updateTimer.start();
 
-        Timer visualTimer = new Timer(TtVisualSettings.frameDelay(), event -> {
+        visualTimer = new Timer(TtVisualSettings.frameDelay(), event -> {
             ((Timer) event.getSource()).setDelay(TtVisualSettings.frameDelay());
             refreshSpectrum();
         });
@@ -201,15 +210,15 @@ public class PlayerWindow extends SkinWindow {
                     break;
                 case "icon":        createIcon(c); break;
                 case "info":
-                    infoLabel = createInfo(c);
-                    infoLabel.setText(org.ttplayer.util.Messages.get("app.name"));
+                    infoLabel = createInfo(c, new TtSongInfo());
+                    infoLabel.setInformation(Collections.singletonList(Messages.get("app.name")));
                     break;
                 case "status":
                     statusLabel = createInfo(c);
                     statusLabel.setText(org.ttplayer.util.Messages.get("status.stopped"));
                     break;
                 case "stereo":
-                    JLabel stereoLabel = createInfo(c);
+                    stereoLabel = createInfo(c);
                     stereoLabel.setText(org.ttplayer.util.Messages.get("player.stereo"));
                     break;
                 case "led":
@@ -317,9 +326,7 @@ public class PlayerWindow extends SkinWindow {
     }
 
     public void updateMiniModeDisplay() {
-        if (miniWindow != null && infoLabel != null) {
-            miniWindow.setDisplayText(infoLabel.getText());
-        }
+        if (miniWindow != null) miniWindow.refreshPlaybackState();
     }
 
     private void createProgressBar(TtSkin.Ctl ctl) {
@@ -495,6 +502,7 @@ public class PlayerWindow extends SkinWindow {
     private void doUpdate() {
         if (playerEngine == null) return;
         try {
+            refreshSongInformation();
             boolean playing = playerEngine.isPlaying();
             updateLedTime();
 
@@ -570,8 +578,28 @@ public class PlayerWindow extends SkinWindow {
     }
 
     public void setSongInfo(String title){
-        if (infoLabel != null) infoLabel.setText(title != null ? title : "");
+        if (playerEngine != null && playerEngine.getCurrentSong() != null) refreshSongInformation();
+        else if (infoLabel != null) infoLabel.setInformation(Collections.singletonList(
+                title == null || title.isEmpty() ? Messages.get("app.name") : title));
         updateMiniModeDisplay();
+    }
+
+    private void refreshSongInformation() {
+        Song song = playerEngine.getCurrentSong();
+        AudioSourceInfo source = song == null ? AudioSourceInfo.EMPTY : playerEngine.getSourceInfo();
+        if (infoLabel != null) {
+            infoLabel.setInformation(SongInformation.pages(song, playerEngine.getDuration(), source));
+            if (song != informationSong) infoLabel.resetAnimation();
+        }
+        informationSong = song;
+        if (stereoLabel != null) stereoLabel.setText(source.channels > 2 ? source.channels + " " + Messages.get("song.channels") :
+                Messages.get(source.channels == 1 ? "player.mono" : "player.stereo"));
+    }
+
+    @Override public void dispose() {
+        if (updateTimer != null) updateTimer.stop();
+        if (visualTimer != null) visualTimer.stop();
+        super.dispose();
     }
 
     public void setOnToggleMiniMode(Runnable listener) {

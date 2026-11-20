@@ -52,6 +52,7 @@
 - **均衡器** — 10 段图形均衡器（biquad），**启用开关 + 杜比环绕 + 13 种预设分类**（流行/摇滚/金属/电子…右键菜单选择），参数持久化下次恢复
 - **频谱可视化** — 移植自 C 语言版本的 **7 种频谱模式**：经典频谱 / 原版示波器 / 原版 GOOM 星空 / 粒子与变化波形 / 32 段 / 渐变曲线 / 镜像，双声道 2048 点 FFT；支持 10–40 FPS、自定义配色、波形消逝和名称标签
 - **迷你模式** — 皮肤播放控制、进度/音量/静音、歌曲信息轮播、LED 已播放/剩余时间；伴随单行歌词在窗口旁自动选边、随 mini 移动，可拖动/滚轮定位并记住尺寸；返回完整模式恢复各窗口原有位置和显隐状态，托盘恢复保持当前模式
+- **歌曲信息栏** — 主窗口与 mini 共用 C 版多维轮播：歌手/标题、专辑、时长、格式/编解码器、原始采样率/位深/声道、平均码率和文件大小；停留 2.5 秒后上滑换页，长标题先横向滚动，悬停显示完整信息；缺失项目自动跳过，换曲、停止与换肤不会残留旧信息
 - **LED 时间显示** — 同步 C 版的 12 格皮肤数字绘制：右对齐、超宽横向压缩、负号独立且不挤压数字；支持三位及更长总分钟数，保留皮肤原始高度，缺图回退文本；左键切换已播放/剩余时间，主窗口与 mini 共享状态，暂停和停止时同步刷新
 - **应用图标** — 同步 C 版修复后的高清透明 PNG、ICO 和 ICNS，窗口共用 16–1024px 原生多尺寸图标；托盘直接使用 C 版最高 1024×1024px 原图，由系统自动缩放；Dock、换肤和语言切换不再降级为低分辨率图标
 - **系统选项** — `F10` 或主菜单/托盘打开 C 版八页设置：系统、播放、格式转换、皮肤、视觉效果、歌词秀、系统关联、关于；自绘侧栏、卡片、按钮、勾选框、滑块与滚动条，修改即时生效并保存；支持启动播放/续播、错误处理、曲间间隔、缓冲、淡入和读取 ReplayGain 标签防削波；后台转换 FLAC/WAV/OGG/Opus/M4A/AAC，支持进度、取消和跳过已有文件，保留源文件；Windows 仅注册当前用户的音频格式，默认播放器由系统确认，不修改其他播放器注册，macOS 关联要求 .app 安装
@@ -245,6 +246,7 @@ The UI supports **Chinese / English / 日本語 / 한국어 / Deutsch switching*
 - **Equalizer** — 10-band biquad EQ with **enable toggle, Dolby surround, 13 presets** via right-click menu; settings persist across restarts
 - **Spectrum** — **7 modes** ported from the C version (classic spectrum / original oscilloscope / original GOOM starfield / particles and changing scope / 32 bands / gradient graph / mirror), stereo 2048-point FFT, 10–40 FPS, custom colors, waveform fading, and name labels
 - **Mini Mode** — a compact mini player pinned to the top-right of the screen, skin-configurable
+- **Song Information** — main and mini windows share the C-style metadata carousel: artist/title, album, duration, format/codec, original sample rate/bit depth/channels, average bitrate and file size. Pages slide upward after 2.5 seconds; long text scrolls horizontally first, and tooltips show all details. Missing fields are omitted and track changes reset the animation.
 - **LED Time** — C-style 12-cell skin sprites with right alignment, horizontal fitting and an independent minus sign; unlimited total-minute digits, original skin height and a text fallback. Left-click toggles shared elapsed/remaining time across main and mini windows, including pause/stop updates
 - **Application Icons** — repaired C-version transparent PNG, ICO and ICNS assets with native 16–1024px window images; the tray uses the highest-resolution 1024×1024px C-version source with automatic system scaling, while Dock, skin changes and language reloads retain high-resolution icons
 - **System Options** — C-style eight-page settings via F10 or the main/tray menu, with custom-painted navigation and controls; live playback, visualization and lyric settings, startup/resume, error policy, interval/buffer/fade and tagged ReplayGain with clipping protection. Background FLAC/WAV/OGG/Opus/M4A/AAC conversion supports progress, cancellation and safe source preservation. File associations register only the current Windows user, leaving default confirmation to the OS; macOS associations require a packaged .app

@@ -465,29 +465,32 @@ public class SkinWindow extends JFrame {
     protected Color getSkinTransparentColor() { return transparentColor; }
 
     protected JLabel createInfo(TtSkin.Ctl ctl) {
-        JLabel lb = new JLabel();
-        lb.setBounds(ctl.left, ctl.top, ctl.right - ctl.left, ctl.bottom - ctl.top);
+        return createInfo(ctl, new JLabel());
+    }
+
+    protected <Label extends JLabel> Label createInfo(TtSkin.Ctl ctl, Label label) {
+        label.setBounds(ctl.left, ctl.top, ctl.right - ctl.left, ctl.bottom - ctl.top);
         if (ctl.color != null && !ctl.color.isEmpty()) {
             Color color = ColorUtils.decode(ctl.color);
-            if (color != null) lb.setForeground(color);
+            if (color != null) label.setForeground(color);
         }
         if (ctl.bkgnd != null && !ctl.bkgnd.isEmpty()) {
             Color color = ColorUtils.decode(ctl.bkgnd);
             if (color != null) {
-                lb.setOpaque(true);
-                lb.setBackground(color);
+                label.setOpaque(true);
+                label.setBackground(color);
             }
         }
         int fontSize = ctl.fontSize > 0 ? ctl.fontSize : 12;
         if (ctl.font != null && !ctl.font.isEmpty()) {
-            lb.setFont(FontUtils.getChineseFont(ctl.font, Font.PLAIN, fontSize));
+            label.setFont(FontUtils.getChineseFont(ctl.font, Font.PLAIN, fontSize));
         } else {
-            lb.setFont(FontUtils.getDefaultChineseFont(fontSize));
+            label.setFont(FontUtils.getDefaultChineseFont(fontSize));
         }
-        lb.setHorizontalAlignment(parseAlign(ctl.align));
-        getContentPane().add(lb);
-        controls.add(new ControlInfo(lb, ctl));
-        return lb;
+        label.setHorizontalAlignment(parseAlign(ctl.align));
+        getContentPane().add(label);
+        controls.add(new ControlInfo(label, ctl));
+        return label;
     }
 
     protected void  addControl(Component comp, TtSkin.Ctl ctl) {
@@ -496,8 +499,9 @@ public class SkinWindow extends JFrame {
 
     private int parseAlign(String a) {
         if (a == null) return SwingConstants.LEFT;
-        if (a.contains("right")) return SwingConstants.RIGHT;
-        if (a.contains("center")) return SwingConstants.CENTER;
+        String alignment = a.toLowerCase(java.util.Locale.ROOT);
+        if (alignment.contains("right")) return SwingConstants.RIGHT;
+        if (alignment.contains("center")) return SwingConstants.CENTER;
         return SwingConstants.LEFT;
     }
 

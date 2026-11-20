@@ -43,6 +43,7 @@ public class PlayerEngine {
 
     private volatile long positionUs;
     private volatile long durationUs;
+    private volatile AudioSourceInfo sourceInfo = AudioSourceInfo.EMPTY;
 
     // 频谱分析用单声道环形缓冲（立体声左右平均，对应 C 的 pcm_push）
     // 容量 16384 单声道帧（≈372ms），需容纳音频输出缓冲 + 分析窗，以便做播放位置对齐。
@@ -290,6 +291,9 @@ public class PlayerEngine {
             grabber.setAudioChannels(2);
             grabber.start();
             if (playbackRevision != revision || stopped) return;
+            AudioSourceInfo openedSource = AudioSourceInfo.read(grabber, currentFile);
+            if (playbackRevision != revision || stopped) return;
+            sourceInfo = openedSource;
             TrackReplayGain trackGain = TrackReplayGain.read(grabber);
             long fadeFrame = 0;
             int openedBufferMs = PlaybackSettings.get().bufferMs;
@@ -493,6 +497,7 @@ public class PlayerEngine {
         }
         seekRequested = false;
         durationUs = 0;
+        sourceInfo = AudioSourceInfo.EMPTY;
         SwingUtilities.invokeLater(() -> {
             if (listener != null) listener.onPlaybackStopped();
         });
@@ -537,6 +542,7 @@ public class PlayerEngine {
     public int getVizResetGen() { return vizResetGen; }
     public int getCurrentSongIndex() { return currentSongIndex; }
     public Song getCurrentSong() { return currentSong; }
+    public AudioSourceInfo getSourceInfo() { return sourceInfo; }
     public int getVolumePercent() { return volumePercent; }
     public int getDuration() { return (int) (durationUs / 1000000); }
     public long getPositionMs() { return positionUs / 1000; }
