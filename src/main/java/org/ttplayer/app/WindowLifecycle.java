@@ -75,6 +75,12 @@ public class WindowLifecycle {
         primary.setState(Frame.NORMAL);
         primary.setVisible(true);
         hub.lyric.positionCompactLyrics();
+        for (JFrame frame : frames) {
+            if (frame != primary && frame.isVisible()) {
+                frame.setExtendedState(frame.getExtendedState() & ~Frame.ICONIFIED);
+                frame.toFront();
+            }
+        }
         primary.toFront();
     }
 
