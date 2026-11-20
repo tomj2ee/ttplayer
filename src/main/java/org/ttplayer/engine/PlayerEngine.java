@@ -291,6 +291,7 @@ public class PlayerEngine {
             grabber.setSampleFormat(AV_SAMPLE_FMT_S16);
             grabber.setSampleRate(44100);
             grabber.setAudioChannels(2);
+            grabber.setVideoOption("thread_type", "slice");
             grabber.start();
             if (playbackRevision != revision || stopped) return;
             TrackReplayGain trackGain = TrackReplayGain.read(grabber);
