@@ -632,7 +632,8 @@ public class PlaylistWindow extends SkinWindow implements TtMenuCatalog.Actions 
             byte[] btnBmp = scrollbarCtl.buttonsImage != null ? skin.getBmp(scrollbarCtl.buttonsImage) : null;
             byte[] thumbBmp = scrollbarCtl.thumbImage != null ? skin.getBmp(scrollbarCtl.thumbImage) : null;
             byte[] barBmp = scrollbarCtl.barImage != null ? skin.getBmp(scrollbarCtl.barImage) : null;
-            ui.setSkinImages(btnBmp, thumbBmp, barBmp);
+            ui.setSkinImages(btnBmp, thumbBmp, barBmp, skin.getTransparentColor(),
+                    scrollbarCtl.thumbResizeCenter, scrollbarCtl.thumbResizeTile);
 
         }
         return ui;

@@ -5,7 +5,6 @@ import org.ttplayer.ui.SkinWindow;
 import javax.swing.*;
 import javax.swing.plaf.basic.BasicScrollBarUI;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 
@@ -15,7 +14,8 @@ public class SkinScrollBarUI extends BasicScrollBarUI {
     private BufferedImage[] thumbFrames;
     private BufferedImage barImg;
 
-    private int thumbState = 0;
+    private int thumbResizeCenter;
+    private boolean thumbResizeTile;
 
 
     private final Color fallbackTrack;
@@ -27,17 +27,16 @@ public class SkinScrollBarUI extends BasicScrollBarUI {
     }
 
     public void setSkinImages(byte[] buttonsBmp, byte[] thumbBmp, byte[] barBmp) {
-        Color transp = new Color(255, 0, 255);
-        if (buttonsBmp != null) {
-            buttonsImg = SkinWindow.decodeBmp(buttonsBmp, transp);
-        }
+        setSkinImages(buttonsBmp, thumbBmp, barBmp, new Color(255, 0, 255), 0, 0);
+    }
+
+    public void setSkinImages(byte[] buttonsBmp, byte[] thumbBmp, byte[] barBmp,
+                              Color transp, int resizeCenter, int resizeTile) {
+        buttonsImg = buttonsBmp == null ? null : SkinWindow.decodeBmp(buttonsBmp, transp);
         thumbFrames = splitFrames(thumbBmp, transp);
-        if (barBmp != null) {
-            BufferedImage src = SkinWindow.decodeBmp(barBmp, transp);
-            if (src != null) {
-                barImg = src;
-            }
-        }
+        barImg = barBmp == null ? null : SkinWindow.decodeBmp(barBmp, transp);
+        thumbResizeCenter = Math.max(0, resizeCenter);
+        thumbResizeTile = resizeTile != 0;
     }
 
 
@@ -98,40 +97,61 @@ public class SkinScrollBarUI extends BasicScrollBarUI {
 
     @Override
     protected void paintTrack(Graphics g, JComponent c, Rectangle r) {
+        g.setColor(fallbackTrack);
+        g.fillRect(r.x, r.y, r.width, r.height);
         if (barImg != null) {
-            g.drawImage(barImg, r.x, r.y, r.width, r.height, null);
+            for (int offset = 0; offset < r.height; offset += barImg.getHeight()) {
+                int height = Math.min(barImg.getHeight(), r.height - offset);
+                g.drawImage(barImg, r.x, r.y + offset, r.x + r.width, r.y + offset + height,
+                        0, 0, barImg.getWidth(), height, null);
+            }
         }
     }
 
     @Override
     protected void paintThumb(Graphics g, JComponent c, Rectangle r) {
-        if (r.isEmpty()) return;
-        if (thumbFrames != null && thumbState >= 0 && thumbState < thumbFrames.length) {
-            BufferedImage frame = thumbFrames[thumbState];
-            if (frame != null) {
-                g.drawImage(frame, r.x, r.y, r.width, r.height, null);
+        if (r.isEmpty() || !c.isEnabled()) return;
+        if (thumbFrames == null || thumbFrames.length == 0) {
+            g.setColor(fallbackThumb);
+            g.fillRect(r.x, r.y, r.width, r.height);
+            return;
+        }
+        int state = isDragging ? 2 : isThumbRollover() ? 1 : 0;
+        BufferedImage frame = thumbFrames[Math.min(state, thumbFrames.length - 1)];
+        int cap = Math.min(thumbResizeCenter, (frame.getHeight() - 1) / 2);
+        cap = Math.min(cap, (r.height - 1) / 2);
+        g.drawImage(frame, r.x, r.y, r.x + r.width, r.y + cap,
+                0, 0, frame.getWidth(), cap, null);
+        g.drawImage(frame, r.x, r.y + r.height - cap, r.x + r.width, r.y + r.height,
+                0, frame.getHeight() - cap, frame.getWidth(), frame.getHeight(), null);
+        int centerHeight = frame.getHeight() - cap * 2;
+        int targetHeight = r.height - cap * 2;
+        if (thumbResizeTile) {
+            for (int offset = 0; offset < targetHeight; offset += centerHeight) {
+                int height = Math.min(centerHeight, targetHeight - offset);
+                g.drawImage(frame, r.x, r.y + cap + offset, r.x + r.width, r.y + cap + offset + height,
+                        0, cap, frame.getWidth(), cap + height, null);
             }
+        } else {
+            g.drawImage(frame, r.x, r.y + cap, r.x + r.width, r.y + r.height - cap,
+                    0, cap, frame.getWidth(), frame.getHeight() - cap, null);
         }
     }
 
     @Override
-    protected void installListeners() {
-        super.installListeners();
-        scrollbar.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseEntered(MouseEvent e) { thumbState = 1; scrollbar.repaint(); }
-            @Override
-            public void mouseExited(MouseEvent e)  { thumbState = 0; scrollbar.repaint(); }
+    protected TrackListener createTrackListener() {
+        return new TrackListener() {
             @Override
             public void mousePressed(MouseEvent e) {
-                Rectangle tb = getThumbBounds();
-                if (tb != null && tb.contains(e.getPoint())) {
-                    thumbState = 2;
-                }
+                super.mousePressed(e);
+                scrollbar.repaint();
             }
             @Override
-            public void mouseReleased(MouseEvent e) { thumbState = 1; scrollbar.repaint(); }
-        });
+            public void mouseReleased(MouseEvent e) {
+                super.mouseReleased(e);
+                scrollbar.repaint();
+            }
+        };
     }
 
     @Override
@@ -172,7 +192,6 @@ public class SkinScrollBarUI extends BasicScrollBarUI {
 
     private static class SkinBtn extends JButton {
         private final BufferedImage[] frames;
-        private int state = 0;
 
         SkinBtn(BufferedImage[] frames) {
             this.frames = frames;
@@ -185,20 +204,17 @@ public class SkinScrollBarUI extends BasicScrollBarUI {
             setContentAreaFilled(false);
             setOpaque(false);
             setBackground(new Color(0, 0, 0, 0));
-            addMouseListener(new MouseAdapter() {
-                @Override public void mouseEntered(MouseEvent e) { state = 1; repaint(); }
-                @Override public void mouseExited(MouseEvent e)  { state = 0; repaint(); }
-                @Override public void mousePressed(MouseEvent e) { state = 2; repaint(); }
-                @Override public void mouseReleased(MouseEvent e) { state = 1; repaint(); }
-            });
+            setRolloverEnabled(true);
         }
 
         @Override
         protected void paintComponent(Graphics g) {
-            if (frames != null && frames.length > state && frames[state] != null) {
+            if (frames != null && frames.length > 0) {
+                int state = getModel().isPressed() && getModel().isArmed() ? 2 : getModel().isRollover() ? 1 : 0;
                 int idx = Math.min(state, frames.length - 1);
                 if (frames[idx] != null) {
-                    g.drawImage(frames[idx], 0, 0, frames[idx].getWidth(), frames[idx].getHeight(), null);
+                    g.drawImage(frames[idx], (getWidth() - frames[idx].getWidth()) / 2,
+                            (getHeight() - frames[idx].getHeight()) / 2, null);
                 }
             } else {
                 super.paintComponent(g);
