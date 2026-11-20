@@ -10,6 +10,9 @@ import java.awt.image.BufferedImage;
 
 public class SkinScrollBarUI extends BasicScrollBarUI {
 
+    private static final int MINIMUM_THUMB_HEIGHT = 24;
+    private static final int MAXIMUM_THUMB_HEIGHT = 64;
+
     private BufferedImage buttonsImg;
     private BufferedImage[] thumbFrames;
     private BufferedImage barImg;
@@ -79,10 +82,17 @@ public class SkinScrollBarUI extends BasicScrollBarUI {
 
     @Override
     protected Dimension getMinimumThumbSize() {
+        Dimension minimum = super.getMinimumThumbSize();
         if (thumbFrames != null && thumbFrames.length > 0 && thumbFrames[0] != null) {
-            return new Dimension(thumbFrames[0].getWidth(), thumbFrames[0].getHeight());
+            minimum = new Dimension(thumbFrames[0].getWidth(), thumbFrames[0].getHeight());
         }
-        return super.getMinimumThumbSize();
+        return new Dimension(minimum.width,
+                Math.max(MINIMUM_THUMB_HEIGHT, Math.min(MAXIMUM_THUMB_HEIGHT, minimum.height)));
+    }
+
+    @Override
+    protected Dimension getMaximumThumbSize() {
+        return new Dimension(super.getMaximumThumbSize().width, MAXIMUM_THUMB_HEIGHT);
     }
 
 
