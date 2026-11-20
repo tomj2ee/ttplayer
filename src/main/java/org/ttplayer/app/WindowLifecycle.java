@@ -72,6 +72,7 @@ public class WindowLifecycle {
             suspendedVisibility = null;
         }
         JFrame primary = hub.inMiniMode ? hub.miniWindow : hub.player;
+        if (hub.videoWindow.isVisible() && hub.playerEngine.isVideoPlayback()) primary = hub.videoWindow;
         primary.setState(Frame.NORMAL);
         primary.setVisible(true);
         hub.lyric.positionCompactLyrics();
@@ -97,7 +98,7 @@ public class WindowLifecycle {
         }
     }
 
-    private JFrame[] frames() { return new JFrame[] {hub.player, hub.lyric, hub.eq, hub.playlist, hub.miniWindow}; }
+    private JFrame[] frames() { return new JFrame[] {hub.player, hub.lyric, hub.eq, hub.playlist, hub.miniWindow, hub.videoWindow}; }
 
     // ==================== 迷你模式 ====================
 
@@ -185,7 +186,7 @@ public class WindowLifecycle {
     private void restorePlayingSong() {
         Song currentSong = getCurrentSong();
         if (rebuildLyrics != null && rebuildLyrics.matches(currentSong)) hub.lyric.restoreContent(rebuildLyrics);
-        else hub.lyric.loadLyrics(currentSong);
+        else hub.lyric.loadLyrics(hub.playerEngine.isVideoPlayback() ? null : currentSong);
         rebuildLyrics = null;
         if (currentSong == null) return;
         if (hub.playerEngine != null && hub.playerEngine.isPaused()) {

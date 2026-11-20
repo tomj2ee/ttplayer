@@ -46,7 +46,9 @@ public class PlayerEventListener {
 
                 hub.tray.updateToolTip(info);
 
-                hub.getLyric().loadLyrics(song);
+                if (hub.getPlayerEngine().isVideoPlayback()) hub.getVideoWindow().showPlayback(song);
+                else hub.getVideoWindow().hidePlayback();
+                hub.getLyric().loadLyrics(hub.getPlayerEngine().isVideoPlayback() ? null : song);
                 if (hub.getMiniWindow() != null) {
                     hub.getMiniWindow().setDisplayText(null);
                     hub.getMiniWindow().refreshPlaybackState();
@@ -57,6 +59,9 @@ public class PlayerEventListener {
 
             @Override
             public void onPlaybackStopped() {
+                if (!hub.getPlayerEngine().isVideoPlayback() || hub.getPlayerEngine().getCurrentSong() == null) {
+                    hub.getVideoWindow().hidePlayback();
+                }
                 playbackSaveTimer.stop();
                 hub.getPlayer().setSongInfo("");
                 hub.getPlayer().setStatusInfo(org.ttplayer.util.Messages.get("status.stopped"));
@@ -94,6 +99,7 @@ public class PlayerEventListener {
 
             @Override
             public void onPlaybackError(String error) {
+                if (hub.getPlayerEngine().isVideoPlayback()) hub.getVideoWindow().showPlaybackError(error);
                 log.error("{} {}", org.ttplayer.util.Messages.get("player.errorPrefix"), error);
                 hub.tray.updateToolTip(org.ttplayer.util.Messages.get("player.errorPrefix") + error);
                 playbackSaveTimer.stop();

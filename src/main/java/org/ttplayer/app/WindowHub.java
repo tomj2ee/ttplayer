@@ -35,6 +35,7 @@ public class WindowHub {
     PlaylistWindow playlist;
     MiniWindow miniWindow;
     DesktopLyricWindow desktopLyric;
+    VideoWindow videoWindow;
 
     boolean inMiniMode = false;
     boolean[] visStates;
@@ -59,6 +60,7 @@ public class WindowHub {
     public PlaylistWindow getPlaylist() { return playlist; }
     public MiniWindow getMiniWindow() { return miniWindow; }
     public DesktopLyricWindow getDesktopLyric() { return desktopLyric; }
+    public VideoWindow getVideoWindow() { return videoWindow; }
     public boolean isMiniMode() { return inMiniMode; }
 
     // ==================== 创建 / 重建 ====================
@@ -127,7 +129,7 @@ public class WindowHub {
         SnapUtils.setupChildWindowDrag(playlist);
         SnapUtils.setupChildWindowDrag(eq);
 
-        fileDrop.setupAll(player, lyric, eq, playlist, miniWindow, desktopLyric);
+        fileDrop.setupAll(player, lyric, eq, playlist, miniWindow, desktopLyric, videoWindow);
     }
 
     public void unregisterSnapAll() {

@@ -28,6 +28,11 @@ public class WindowAssembler {
         hub.eq = new EqualizerWindow(hub.skin, hub.playerEngine);
         hub.playlist = new PlaylistWindow(hub.skin);
         hub.miniWindow = new MiniWindow(hub.skin, hub.playerEngine);
+        if (hub.videoWindow == null) {
+            hub.videoWindow = new VideoWindow(hub.playerEngine,
+                    () -> SongImportSupport.openAndAddToPlaylist(hub, hub.videoWindow));
+        }
+        hub.videoWindow.refreshLabels();
 
         if (hub.desktopLyric == null) {
             hub.desktopLyric = new DesktopLyricWindow(hub.playerEngine);

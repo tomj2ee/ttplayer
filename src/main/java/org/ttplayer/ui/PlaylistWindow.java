@@ -645,6 +645,7 @@ public class PlaylistWindow extends SkinWindow implements TtMenuCatalog.Actions 
     private void doAddFile() {
         JFileChooser chooser = new JFileChooser();
         chooser.setMultiSelectionEnabled(true);
+        chooser.setFileFilter(org.ttplayer.util.SongUtils.mediaFileFilter());
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             List<File> files = new ArrayList<>();
             for (File file : chooser.getSelectedFiles()) {
@@ -668,10 +669,7 @@ public class PlaylistWindow extends SkinWindow implements TtMenuCatalog.Actions 
             if (f.isDirectory()) {
                 collectAudioFiles(f, out);
             } else {
-                String n = f.getName().toLowerCase();
-                for (String ext : org.ttplayer.util.FileAssociationService.EXTENSIONS) {
-                    if (n.endsWith(ext)) { out.add(f); break; }
-                }
+                if (org.ttplayer.util.SongUtils.isMediaFile(f)) out.add(f);
             }
         }
     }

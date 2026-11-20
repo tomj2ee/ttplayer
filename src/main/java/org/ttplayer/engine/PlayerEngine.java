@@ -494,7 +494,13 @@ public class PlayerEngine {
                 if (seekRequested) continue;
                 if (stopped || playbackRevision != revision) return false;
                 Frame frame = grabber.grab();
-                if (frame == null) break;
+                if (frame == null) {
+                    if (durationUs > 0 && !awaitVideoTimestamp(durationUs, revision)) continue;
+                    if (seekRequested || stopped || playbackRevision != revision) continue;
+                    if (output != null) output.drain();
+                    positionUs = durationUs;
+                    return !stopped && playbackRevision == revision;
+                }
                 long timestamp = Math.max(0, frame.timestamp);
                 if (timestamp < minimumTimestamp || preview && frame.image == null) continue;
                 if (!preview && !awaitVideoTimestamp(timestamp, revision)) continue;
@@ -525,13 +531,7 @@ public class PlayerEngine {
                 }
                 positionUs = timestamp;
             }
-            boolean completed = !stopped && playbackRevision == revision;
-            if (completed) {
-                if (durationUs > 0) awaitVideoTimestamp(durationUs, revision);
-                if (output != null && !stopped && playbackRevision == revision) output.drain();
-                positionUs = durationUs;
-            }
-            return completed && !stopped && playbackRevision == revision;
+            return false;
         } finally {
             if (output != null) {
                 try { output.stop(); output.close(); } catch (Exception ignored) {}
@@ -670,7 +670,8 @@ public class PlayerEngine {
     public int getVolumePercent() { return volumePercent; }
     public int getDuration() { return (int) (durationUs / 1000000); }
     public long getPositionMs() {
-        long position = videoPlayback && playing && !seekRequested ? videoClock.positionUs() : positionUs;
+        if (!videoPlayback) return positionUs / 1000;
+        long position = playing && !seekRequested ? videoClock.positionUs() : positionUs;
         return Math.max(0, durationUs > 0 ? Math.min(position, durationUs) : position) / 1000;
     }
     public int getPosition() { return (int) (getPositionMs() / 1000); }

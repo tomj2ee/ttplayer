@@ -85,7 +85,7 @@ public class FileDropController {
         // 音频文件 → 加入播放列表并播放第一个
         List<File> audio = new ArrayList<>();
         for (File f : files) {
-            if (SongUtils.isAudioFile(f)) audio.add(f);
+            if (SongUtils.isMediaFile(f)) audio.add(f);
         }
         if (!audio.isEmpty() && hub.getPlaylist() != null) {
             hub.getPlaylist().loadSongsAndPlay(audio);
