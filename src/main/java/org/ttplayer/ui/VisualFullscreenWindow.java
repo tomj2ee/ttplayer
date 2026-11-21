@@ -74,8 +74,14 @@ public final class VisualFullscreenWindow extends JDialog {
     public void updateData(byte[] data) { visualizer.updateData(data); }
     public void clearDisplay() { visualizer.clearDisplay(); }
 
+    @Override public void setVisible(boolean visible) {
+        super.setVisible(visible);
+        MacFullscreenPresentation.update(this, visible);
+    }
+
     @Override
     public void dispose() {
+        MacFullscreenPresentation.update(this, false);
         hideControls.stop();
         super.dispose();
     }

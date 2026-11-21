@@ -221,6 +221,7 @@ public final class ApplicationMenus implements TtMenuCatalog.Actions {
     @Override
     public boolean enabled(String action) {
         if (action.startsWith("lyric_offset_")) return hub.playerEngine.getCurrentSong() != null;
+        if ("delete_invalid".equals(action)) return hub.playlist.enabled(action);
         if (java.util.Arrays.asList("properties", "open_file_location", "delete", "delete_other", "batch_info", "replaygain_scan", "replaygain_update").contains(action))
             return !hub.playlist.getSelectedSongs().isEmpty();
         boolean hasList = hub.playlistManager.getCurrentPlaylist() != null;

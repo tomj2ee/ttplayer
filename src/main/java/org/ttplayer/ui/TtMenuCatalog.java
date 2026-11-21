@@ -60,6 +60,7 @@ public final class TtMenuCatalog {
                 item(popup, "menu.deleteNotSelected", "delete_other", actions);
                 popup.addSeparator();
                 item(popup, "menu.deleteDuplicates", "delete_duplicates", actions);
+                item(popup, "menu.deleteInvalid", "delete_invalid", actions);
                 item(popup, "menu.clearList", "clear_list", actions);
                 break;
             case LIST:
@@ -100,8 +101,6 @@ public final class TtMenuCatalog {
                 break;
             case MODE:
                 for (int index = 0; index < 5; index++) toggle(popup, "menu.playMode." + index, "mode:" + index, actions);
-                popup.addSeparator();
-                toggle(popup, "menu.pauseAfterPlay", "pause_after", actions);
                 break;
             case PLAYLIST_CONTEXT:
                 item(popup, "menu.properties", "properties", actions);

@@ -53,7 +53,7 @@ public class LyricWindow extends SkinWindow {
     private JButton fallbackSearch;
 
     public LyricWindow(TtSkin skin, PlayerEngine engine) {
-        super(skin, findWindow(skin, "lyric_window"), false);
+        super(skin, findWindow(skin, "lyric_window"), false, Color.BLACK);
         playerEngine = engine;
         if (def == null) {
             setUndecorated(true);
@@ -70,9 +70,10 @@ public class LyricWindow extends SkinWindow {
             fallbackSearch.setBounds(360, 10, 140, 30);
             fallbackSearch.addActionListener(event -> searchLyricsOnline()); panel.add(fallbackSearch);
             setContentPane(panel);
-            setBackground(new Color(0, true));
         }
         if (renderer == null) { renderer = new LyricRenderer(this); getContentPane().add(renderer); }
+        // The lyric area must repaint its backing when the window uses per-pixel alpha at the corners.
+        renderer.setOpaque(hasTranslucentCorners());
         setTitle(Messages.get("lyric.title"));
         setMinSize(100, 100);
         enableEdgeResizing();
@@ -122,6 +123,10 @@ public class LyricWindow extends SkinWindow {
                 addControl(renderer, fill);
             }
         }
+    }
+
+    @Override protected void onEdgeResizeStateChanged(boolean resizing) {
+        if (renderer != null) renderer.setResizing(resizing);
     }
 
     @Override protected void repositionControls() {
@@ -452,6 +457,7 @@ public class LyricWindow extends SkinWindow {
             getRootPane().putClientProperty("independentLayout", null);
             setBounds(normalBounds);
         }
+        renderer.setOpaque(!value && hasTranslucentCorners());
         renderer.setCompact(value);
         if (value) positionCompactLyrics();
         repositionControls();

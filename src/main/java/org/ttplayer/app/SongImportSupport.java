@@ -23,17 +23,16 @@ public class SongImportSupport {
     public static void openAndAddToPlaylist(WindowHub hub, java.awt.Component parent) {
         JFileChooser chooser = new JFileChooser();
         chooser.setMultiSelectionEnabled(true);
+        chooser.setFileFilter(org.ttplayer.util.SongUtils.mediaFileFilter());
+        Song current = hub.getPlayerEngine().getCurrentSong();
+        if (current != null && current.filePath != null) {
+            chooser.setCurrentDirectory(new File(current.filePath).getParentFile());
+        }
         int result = chooser.showOpenDialog(parent);
         if (result != JFileChooser.APPROVE_OPTION) return;
 
-        for (File file : chooser.getSelectedFiles()) {
-            Song song = new Song(file.getAbsolutePath());
-            hub.getPlaylistManager().getCurrentPlaylist().addSong(song);
-        }
-        hub.getPlaylist().refreshRightListPublic();
-
-        if (!hub.getPlaylistManager().getCurrentPlaylist().songs.isEmpty()) {
-            hub.getPlayerEngine().play(0);
-        }
+        java.util.List<File> files = new java.util.ArrayList<>();
+        for (File file : chooser.getSelectedFiles()) if (file.isFile()) files.add(file);
+        if (!files.isEmpty()) hub.getPlaylist().loadSongsAndPlay(files);
     }
 }

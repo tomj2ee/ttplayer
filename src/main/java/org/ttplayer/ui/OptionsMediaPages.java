@@ -25,7 +25,9 @@ final class OptionsMediaPages {
     private SwingWorker<AudioConversionService.Result, AudioConversionService.Progress> conversionWorker;
     private final AtomicBoolean conversionCancelled = new AtomicBoolean();
     private String conversionMessage = "";
-    private JLabel conversionStatus, conversionCount;
+    private JLabel conversionStatus;
+    private Path conversionSource, conversionDirectory;
+    private boolean conversionInitialized;
     private List<SkinEntry> skins;
     private SwingWorker<List<SkinEntry>, Void> skinWorker;
     private String selectedSkin;
@@ -34,12 +36,34 @@ final class OptionsMediaPages {
     OptionsMediaPages(SystemOptionsDialog view) { this.view = view; selectedSkin = view.hub.getCurrentSkinPath(); }
     boolean isConverting() { return conversionWorker != null; }
     boolean isAssociating() { return associationWorker != null; }
+    boolean hasConversionSource() { return conversionSource != null && Files.isRegularFile(conversionSource); }
+
+    void resetConversionSelection() {
+        if (isConverting()) return;
+        conversionInitialized = false;
+        conversionSource = null; conversionDirectory = null; conversionMessage = "";
+    }
 
     OptionsStyle.Rows conversionPage() {
+        if (!conversionInitialized) {
+            conversionInitialized = true;
+            setConversionSource(currentPlayingFile());
+        }
         OptionsStyle.Rows rows = new OptionsStyle.Rows();
         ConversionSettings settings = ConversionSettings.load();
         rows.row(OptionsStyle.label(Messages.get("options.conversion.chooseFormat")));
-        rows.row(OptionsStyle.note(Messages.get("options.conversion.keepSource")));
+        JLabel source = OptionsStyle.note(Messages.get("options.conversion.source") + ": "
+                + (conversionSource == null ? Messages.get("options.conversion.noSource") : conversionSource));
+        source.setName("options.conversion.source"); rows.row(source, 38);
+        JButton chooseFile = namedButton("options.conversion.chooseFile", this::chooseConversionSource);
+        chooseFile.setEnabled(!isConverting());
+        JButton current = namedButton("options.conversion.useCurrent", () -> {
+            Path file = currentPlayingFile();
+            if (file == null) { view.error(new IllegalStateException(Messages.get("options.conversion.noCurrent"))); return; }
+            setConversionSource(file); view.refreshPage();
+        });
+        current.setEnabled(!isConverting() && currentPlayingFile() != null);
+        rows.pair(chooseFile, current);
         ConversionSettings.Format[] formats = ConversionSettings.Format.values();
         JButton[] buttons = new JButton[formats.length];
         for (int index = 0; index < formats.length; index++) {
@@ -49,37 +73,70 @@ final class OptionsMediaPages {
             });
             buttons[index].setName("options.conversion.format." + format.extension);
             buttons[index].setSelected(settings.format == format);
+            buttons[index].setEnabled(!isConverting() && (conversionSource == null
+                    || !format.extension.equalsIgnoreCase(SongUtils.getFileExtension(conversionSource.getFileName().toString()))));
         }
         for (int index = 0; index < buttons.length; index += 2) rows.pair(buttons[index], buttons[index + 1]);
         view.valueRow(rows, "options.conversion.quality", 32, 320, settings.quality, "kbps", value -> {
             ConversionSettings next = ConversionSettings.load(); next.quality = value; next.save();
         });
-        String directory = settings.directory.trim().isEmpty() ? Messages.get("options.conversion.sameFolder") : settings.directory;
-        rows.row(OptionsStyle.note(Messages.get("options.conversion.output") + ": " + directory), 38);
+        Path directory = conversionDirectory != null ? conversionDirectory : conversionSource == null ? null : conversionSource.getParent();
+        JLabel output = OptionsStyle.note(Messages.get("options.conversion.output") + ": "
+                + (directory == null ? Messages.get("options.conversion.sameFolder") : directory));
+        output.setName("options.conversion.output"); rows.row(output, 38);
         JButton choose = OptionsStyle.button(Messages.get("options.conversion.chooseFolder"), () -> {
             JFileChooser chooser = new JFileChooser(); chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            if (!settings.directory.trim().isEmpty()) chooser.setCurrentDirectory(Paths.get(settings.directory).toFile());
+            if (directory != null) chooser.setCurrentDirectory(directory.toFile());
             if (chooser.showOpenDialog(view) == JFileChooser.APPROVE_OPTION) {
-                ConversionSettings next = ConversionSettings.load(); next.directory = chooser.getSelectedFile().getAbsolutePath(); next.save(); view.refreshPage();
+                conversionDirectory = chooser.getSelectedFile().toPath().toAbsolutePath().normalize(); view.refreshPage();
             }
         });
-        choose.setName("options.conversion.chooseFolder"); rows.row(choose);
+        choose.setName("options.conversion.chooseFolder"); choose.setEnabled(!isConverting());
         JButton same = OptionsStyle.button(Messages.get("options.conversion.sameFolder"), () -> {
-            ConversionSettings next = ConversionSettings.load(); next.directory = ""; next.save(); view.refreshPage();
+            conversionDirectory = null; view.refreshPage();
         });
-        same.setName("options.conversion.sameFolder"); rows.row(same);
+        same.setName("options.conversion.sameFolder"); same.setEnabled(!isConverting()); rows.pair(choose, same);
         view.check(rows, "options.conversion.skipExisting", settings.skipExisting, value -> {
             ConversionSettings next = ConversionSettings.load(); next.skipExisting = value; next.save();
         });
-        conversionCount = OptionsStyle.label(Messages.get("options.conversion.count", selectedSongs().size()));
-        conversionCount.setForeground(OptionsStyle.ACCENT); rows.row(conversionCount, 38);
+        rows.row(OptionsStyle.note(Messages.get("options.conversion.keepSource")));
         conversionStatus = OptionsStyle.note(conversionMessage.isEmpty() ? Messages.get("options.conversion.focusHint") : conversionMessage);
         rows.row(conversionStatus, 38);
         return rows;
     }
 
-    void refreshSelectionCount() {
-        if (conversionCount != null) conversionCount.setText(Messages.get("options.conversion.count", selectedSongs().size()));
+    private Path currentPlayingFile() {
+        Song song = view.hub.getCurrentSong();
+        if (song == null || song.filePath == null) return null;
+        try {
+            Path file = Paths.get(song.filePath).toAbsolutePath().normalize();
+            return Files.isRegularFile(file) ? file : null;
+        } catch (InvalidPathException error) { return null; }
+    }
+
+    private void setConversionSource(Path source) {
+        conversionSource = source; conversionDirectory = null; conversionMessage = "";
+        if (source == null) return;
+        ConversionSettings settings = ConversionSettings.load();
+        if (settings.format.extension.equalsIgnoreCase(SongUtils.getFileExtension(source.getFileName().toString()))) {
+            settings.format = settings.format == ConversionSettings.Format.FLAC ? ConversionSettings.Format.WAV : ConversionSettings.Format.FLAC;
+            settings.save();
+        }
+    }
+
+    private void chooseConversionSource() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle(Messages.get("options.conversion.chooseFile"));
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY); chooser.setMultiSelectionEnabled(false);
+        chooser.setFileFilter(new FileNameExtensionFilter(Messages.get("options.conversion.audioFiles"),
+                FileAssociationService.EXTENSIONS.stream().map(extension -> extension.substring(1)).toArray(String[]::new)));
+        if (conversionSource != null) {
+            chooser.setCurrentDirectory(conversionSource.getParent().toFile()); chooser.setSelectedFile(conversionSource.toFile());
+        }
+        if (chooser.showOpenDialog(view) != JFileChooser.APPROVE_OPTION) return;
+        Path source = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
+        if (!Files.isRegularFile(source)) { view.error(new IllegalStateException(Messages.get("options.conversion.sourceMissing"))); return; }
+        setConversionSource(source); view.refreshPage();
     }
 
     private List<Song> selectedSongs() {
@@ -93,11 +150,10 @@ final class OptionsMediaPages {
 
     void toggleConversion() {
         if (isConverting()) { conversionCancelled.set(true); setConversionMessage(Messages.get("options.conversion.cancelling")); return; }
-        List<Path> files = new ArrayList<>();
-        try { for (Song song : selectedSongs()) if (song.filePath != null) files.add(Paths.get(song.filePath)); }
-        catch (InvalidPathException error) { view.error(error); return; }
-        if (files.isEmpty()) { view.error(new IllegalStateException(Messages.get("options.conversion.selectFirst"))); return; }
+        if (!hasConversionSource()) { view.error(new IllegalStateException(Messages.get("options.conversion.selectFirst"))); return; }
+        List<Path> files = Collections.singletonList(conversionSource);
         ConversionSettings settings = ConversionSettings.load();
+        settings.directory = conversionDirectory == null ? "" : conversionDirectory.toString();
         conversionCancelled.set(false);
         conversionWorker = new SwingWorker<AudioConversionService.Result, AudioConversionService.Progress>() {
             @Override protected AudioConversionService.Result doInBackground() {
@@ -117,11 +173,12 @@ final class OptionsMediaPages {
                             + (result.cancelled ? " · " + Messages.get("options.conversion.cancelled") : "")
                             + (result.error.isEmpty() ? "" : " · " + result.error));
                 } catch (Exception error) { setConversionMessage(error.getMessage()); }
-                view.updateFooter();
+                if (view.getSelectedPage() == 2) view.refreshPage();
+                else view.updateFooter();
             }
         };
         setConversionMessage(Messages.get("options.conversion.starting"));
-        conversionWorker.execute(); view.updateFooter();
+        conversionWorker.execute(); view.refreshPage();
     }
 
     private void setConversionMessage(String message) {

@@ -55,6 +55,7 @@ public final class TtMenuGlyphs {
         result.put("properties", 32);
         result.put("open_file_location", 22);
         result.put("play_pause", 3);
+        result.put("delete_invalid", 25);
         String[] names = {"show", "pause_after", "open_skin", "desktop_lines", "open", "folder", "add_url",
                 "add_search", "new_list", "clear_list", "delete", "delete_other", "delete_duplicates", "delete_list",
                 "import", "export", "save_all", "rename_list", "filename_format", "batch_info", "about", "select_all",

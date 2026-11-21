@@ -111,6 +111,7 @@ public final class SystemOptionsDialog extends JDialog {
     public int getSelectedPage() { return selectedPage; }
 
     public void open(int page) {
+        if (!isVisible()) media.resetConversionSelection();
         if (page >= 0 && page < PAGES.length) selectPage(page);
         else refreshPage();
         setVisible(true); toFront();
@@ -176,7 +177,8 @@ public final class SystemOptionsDialog extends JDialog {
                 : selectedPage == 3 ? "options.skins.apply" : selectedPage == 6 && media.associations.isSupported()
                 ? (com.sun.jna.Platform.isMac() ? "options.associations.setDefault" : "options.associations.register") : "options.save";
         primary.setText(Messages.get(action));
-        primary.setEnabled(selectedPage != 6 || !media.isAssociating());
+        primary.setEnabled((selectedPage != 2 || media.isConverting() || media.hasConversionSource())
+                && (selectedPage != 6 || !media.isAssociating()));
         footerHint.setText(Messages.get(selectedPage == 6 ? (com.sun.jna.Platform.isMac() ? "options.associations.macHint" : "options.associations.hint") : "options.live"));
     }
 

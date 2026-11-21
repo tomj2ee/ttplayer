@@ -43,6 +43,9 @@ public final class TtMenuStyle {
         });
         UIManager.put("Menu.submenuPopupOffsetX", -2);
         UIManager.put("Menu.submenuPopupOffsetY", -4);
+        // Menu rows leave the brand strip to the popup, including on partial repaints.
+        UIManager.put("MenuItem.opaque", Boolean.FALSE);
+        UIManager.put("Menu.opaque", Boolean.FALSE);
         UIManager.put("MenuItem.font", FontUtils.getDefaultChineseFont(12));
         UIManager.put("Menu.font", FontUtils.getDefaultChineseFont(12));
         UIManager.put("CheckBoxMenuItem.font", FontUtils.getDefaultChineseFont(12));
@@ -154,6 +157,20 @@ public final class TtMenuStyle {
         public void installUI(JComponent component) {
             super.installUI(component);
             TtMenuScroll.install((JPopupMenu) component);
+        }
+        @Override
+        public Popup getPopup(JPopupMenu menu, int x, int y) {
+            Popup popup = super.getPopup(menu, x, y);
+            if (!(menu instanceof BasicComboPopup)) {
+                Window window = SwingUtilities.getWindowAncestor(menu);
+                if (window instanceof JWindow && window.getType() == Window.Type.POPUP) {
+                    JRootPane rootPane = ((JWindow) window).getRootPane();
+                    // Aqua applies its alpha through this property on every use of the cached window.
+                    if (rootPane.getClientProperty("Window.alpha") != null)
+                        rootPane.putClientProperty("Window.alpha", 1.0f);
+                }
+            }
+            return popup;
         }
         @Override
         public void paint(Graphics graphics, JComponent component) {

@@ -1,5 +1,6 @@
 package org.ttplayer.util;
 
+import com.sun.jna.Platform;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.ttplayer.engine.PlayerEngine;
@@ -15,6 +16,7 @@ public class PlayerTray {
     private static final Logger log = LoggerFactory.getLogger(PlayerTray.class);
     private TrayIcon trayIcon;
     private SystemTray tray;
+    private MacStatusMenu macStatusMenu;
     private PlayerWindow playerWindow;
     private PlayerEngine playerEngine;
     private JPopupMenu popupMenu;
@@ -27,9 +29,6 @@ public class PlayerTray {
     private Runnable onSwitchSkin;
     private Runnable onShowMainWindow;
     private java.util.function.Consumer<java.util.Locale> onLanguageChanged;
-    // 用于触发弹出的 dummy AWT PopupMenu
-    private PopupMenu dummyPopup;
-
     public PlayerTray(PlayerWindow playerWindow, PlayerEngine playerEngine) {
         this.playerWindow = playerWindow;
         this.playerEngine = playerEngine;
@@ -53,6 +52,15 @@ public class PlayerTray {
     }
 
     private void initTray() {
+        BufferedImage image = loadTrayIcon();
+        createPopupMenu();
+        if (Platform.isMac()) {
+            macStatusMenu = new MacStatusMenu(image, this::showMainWindow, () -> {
+                createPopupMenu();
+                return popupMenu;
+            });
+            return;
+        }
         // 检查系统是否支持托盘
         if (!SystemTray.isSupported()) {
             log.warn(org.ttplayer.util.Messages.get("tray.notSupported"));
@@ -61,16 +69,8 @@ public class PlayerTray {
 
         tray = SystemTray.getSystemTray();
 
-        // 创建 Swing 弹出菜单
-        createPopupMenu();
-
-        // 创建一个 dummy AWT PopupMenu（不会实际显示）
-        dummyPopup = new PopupMenu();
-
-        // 加载图标
-        Image image = loadTrayIcon();
         if (image != null) {
-            trayIcon = new TrayIcon(image, "TTPlayer", dummyPopup);
+            trayIcon = new TrayIcon(image, "TTPlayer", new PopupMenu());
             trayIcon.setImageAutoSize(true);
 
             // 添加鼠标监听器来处理点击和弹出菜单
@@ -85,18 +85,12 @@ public class PlayerTray {
 
                 @Override
                 public void mousePressed(MouseEvent e) {
-                    maybeShowPopup(e);
+                    if (e.isPopupTrigger()) showJPopupMenu(e.getLocationOnScreen());
                 }
 
                 @Override
                 public void mouseReleased(MouseEvent e) {
-                    maybeShowPopup(e);
-                }
-
-                private void maybeShowPopup(MouseEvent e) {
-                    if (e.isPopupTrigger()) {
-                        showJPopupMenu();
-                    }
+                    if (e.isPopupTrigger()) showJPopupMenu(e.getLocationOnScreen());
                 }
             });
 
@@ -111,14 +105,11 @@ public class PlayerTray {
     /**
      * 在鼠标位置显示 Swing JPopupMenu
      */
-    private void showJPopupMenu() {
+    private void showJPopupMenu(Point mouseLoc) {
         if (popupMenu == null) {
             createPopupMenu();
         }
-
-        // 获取鼠标的屏幕位置
-        PointerInfo pointerInfo = MouseInfo.getPointerInfo();
-        Point mouseLoc = pointerInfo.getLocation();
+        if (popupMenu.isVisible()) return;
 
         // 创建一个不可见的窗口作为 popup 的父组件
         JWindow window = new JWindow();
@@ -148,12 +139,12 @@ public class PlayerTray {
         popupMenu.show(window, 0, 0);
     }
 
-    private Image loadTrayIcon() {
+    private BufferedImage loadTrayIcon() {
         BufferedImage image = AppIcons.getLargestImage();
         return image != null ? image : createDefaultTrayIcon();
     }
 
-    private Image createDefaultTrayIcon() {
+    private BufferedImage createDefaultTrayIcon() {
         int size = 16;
         BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = image.createGraphics();
@@ -294,20 +285,20 @@ public class PlayerTray {
     }
 
     private void exitApplication() {
-        if (tray != null && trayIcon != null) {
-            tray.remove(trayIcon);
-        }
+        remove();
         System.exit(0);
     }
 
     public void updateToolTip(String text) {
-        if (trayIcon != null) {
-            trayIcon.setToolTip(text != null ? text : "TTPlayer");
-        }
+        String tooltip = text != null ? text : "TTPlayer";
+        if (macStatusMenu != null) macStatusMenu.setToolTip(tooltip);
+        else if (trayIcon != null) trayIcon.setToolTip(tooltip);
     }
 
     public void ensureTrayVisible() {
-        if (tray == null || trayIcon == null) {
+        if (macStatusMenu != null) {
+            macStatusMenu.show();
+        } else if (tray == null || trayIcon == null) {
             initTray();
         } else {
             boolean found = false;
@@ -328,7 +319,8 @@ public class PlayerTray {
     }
 
     public void remove() {
-        if (tray != null && trayIcon != null) {
+        if (macStatusMenu != null) macStatusMenu.remove();
+        else if (tray != null && trayIcon != null) {
             tray.remove(trayIcon);
         }
     }
