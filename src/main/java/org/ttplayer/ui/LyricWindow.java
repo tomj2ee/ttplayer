@@ -125,6 +125,10 @@ public class LyricWindow extends SkinWindow {
         }
     }
 
+    @Override protected void onEdgeResizeStateChanged(boolean resizing) {
+        if (renderer != null) renderer.setResizing(resizing);
+    }
+
     @Override protected void repositionControls() {
         if (compact) {
             if (renderer != null) renderer.setBounds(6, 2, Math.max(1, getWidth() - 12), Math.max(1, getHeight() - 4));

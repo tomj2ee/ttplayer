@@ -21,6 +21,7 @@ public class LyricRenderer extends JPanel {
     private long playbackTimeMs, offsetMs;
     private int currentLineIndex = -1;
     private boolean loading, dragging, compact, recordPressed;
+    private boolean resizing;
     private Point dragAnchor;
     private float previewLine;
     private LyricSettings.Style style = new LyricSettings.Style(false);
@@ -115,10 +116,10 @@ public class LyricRenderer extends JPanel {
         updateTimer = new Timer(25, event -> {
             PlayerEngine engine = lyricWindow.playerEngine;
             if (engine != null) setCurrentTime(engine.getPositionMs());
-            lyricWindow.advanceCoverAnimation();
-            // Let the resize compositor settle; the final resize event below
-            // triggers a repaint when edge dragging ends.
-            if (!lyricWindow.isEdgeResizing()) repaint();
+            if (!lyricWindow.isEdgeResizing()) {
+                lyricWindow.advanceCoverAnimation();
+                repaint();
+            }
         });
         addHierarchyListener(event -> {
             if ((event.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0) {
@@ -136,6 +137,17 @@ public class LyricRenderer extends JPanel {
     private boolean seekEnabled() { return MenuSettings.flag("lyric.seek", true); }
     private float clampLine(float value) { return Math.max(0, Math.min(lines.size() - 1, value)); }
     public boolean isCompact() { return compact; }
+    public void setResizing(boolean value) {
+        if (resizing == value) return;
+        resizing = value;
+        if (value) {
+            recordStage = null;
+            recordShape = null;
+            mouse = null;
+        } else {
+            repaint();
+        }
+    }
     public void setCompact(boolean value) { compact = value; cancelDrag(); scroll.reset(); repaint(); }
     public void cancelDrag() { dragging = false; recordPressed = false; repaint(); }
 
@@ -218,7 +230,7 @@ public class LyricRenderer extends JPanel {
     public void setCurrentTime(long positionMs) {
         playbackTimeMs = positionMs;
         currentLineIndex = LyricTimeline.active(lines, positionMs, offsetMs);
-        repaint();
+        if (!resizing && !lyricWindow.isEdgeResizing()) repaint();
     }
 
     private Font compactFont() {
@@ -262,7 +274,7 @@ public class LyricRenderer extends JPanel {
         textBounds.setRect(0, 0, getWidth(), getHeight());
         recordStage = null;
         recordShape = null;
-        if (!compact && showCover && MenuSettings.flag("cover", true)) {
+        if (!resizing && !compact && showCover && MenuSettings.flag("cover", true)) {
             recordStage = RecordCoverPainter.place(new Rectangle2D.Float(0, 0, getWidth(), getHeight()), hasLyrics(), textBounds);
             if (recordStage != null) recordShape = RecordCoverPainter.recordBounds(recordStage);
         }
@@ -279,7 +291,7 @@ public class LyricRenderer extends JPanel {
             canvas.setColor(LyricTextPainter.alpha(bgColor, style.backgroundOpacity / 100f));
             canvas.fillRect(0, 0, getWidth(), getHeight());
         }
-        if (recordStage != null) {
+        if (!resizing && recordStage != null) {
             lyricWindow.advanceCoverAnimation();
             RecordCoverPainter.paint(canvas, recordStage, lyricWindow.getCoverImage(), lyricWindow.getRecordRotation(),
                     lyricWindow.getRecordArm(), lyricWindow.playerEngine != null && lyricWindow.playerEngine.isPlaying() && !lyricWindow.playerEngine.isPaused(),

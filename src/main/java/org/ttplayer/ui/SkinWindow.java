@@ -36,7 +36,6 @@ public class SkinWindow extends JFrame {
     private int minW = 100, minH = 60;
     private boolean edgeResizerInstalled;
     private volatile boolean edgeResizing;
-    private volatile BufferedImage resizeSnapshot;
 
     private List<ControlInfo> controls = new ArrayList<>();
 
@@ -112,48 +111,13 @@ public class SkinWindow extends JFrame {
         super.setVisible(visible);
     }
 
-    /**
-     * Paint a stable copy while a transparent window is being resized. macOS
-     * otherwise composites each intermediate Swing repaint as a separate
-     * frame, which appears as flashing around translucent skin corners.
-     */
-    @Override
-    public void paint(Graphics graphics) {
-        BufferedImage snapshot = resizeSnapshot;
-        if (edgeResizing && snapshot != null) {
-            Graphics2D canvas = (Graphics2D) graphics.create();
-            // Transparent peers can retain pixels from the previous bounds.
-            // Clear the whole current frame before copying the snapshot so
-            // old lyric text cannot remain underneath the resized image.
-            canvas.setComposite(AlphaComposite.Clear);
-            canvas.fillRect(0, 0, getWidth(), getHeight());
-            canvas.setComposite(AlphaComposite.Src);
-            canvas.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                    RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            canvas.drawImage(snapshot, 0, 0, getWidth(), getHeight(), null);
-            canvas.dispose();
-            return;
-        }
-        super.paint(graphics);
-    }
-
     public void setMinSize(int w, int h) { minW = w; minH = h; }
 
     /** True while the user is actively dragging a resize edge. */
     protected final boolean isEdgeResizing() { return edgeResizing; }
 
-    private void captureResizeSnapshot() {
-        int width = getWidth(), height = getHeight();
-        if (width <= 0 || height <= 0) {
-            resizeSnapshot = null;
-            return;
-        }
-        BufferedImage snapshot = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D canvas = snapshot.createGraphics();
-        getRootPane().printAll(canvas);
-        canvas.dispose();
-        resizeSnapshot = snapshot;
-    }
+    /** Hook for windows that need to suspend animated content during resize. */
+    protected void onEdgeResizeStateChanged(boolean resizing) {}
 
     // ================================================================
     //  控件重新定位
@@ -448,9 +412,11 @@ public class SkinWindow extends JFrame {
             frameX = frame.getX();
             frameY = frame.getY();
             pendingBounds = null;
-            if (edge != 0) captureResizeSnapshot();
             edgeResizing = edge != 0;
-            if (edgeResizing) resizeTimer.start();
+            if (edgeResizing) {
+                onEdgeResizeStateChanged(true);
+                resizeTimer.start();
+            }
         }
 
         @Override public void mouseEntered(MouseEvent e) {
@@ -505,10 +471,9 @@ public class SkinWindow extends JFrame {
             resizeTimer.stop();
             pendingBounds = null;
             edgeResizing = false;
-            resizeSnapshot = null;
+            onEdgeResizeStateChanged(false);
             edge = 0;
             frame.setCursor(Cursor.getDefaultCursor());
-            frame.repaint();
         }
 
         @Override public void mouseExited(MouseEvent e) {
