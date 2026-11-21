@@ -369,11 +369,14 @@ public class PlaylistWindow extends SkinWindow implements TtMenuCatalog.Actions 
         createMenus();
         if (toolbar.getButton(0) != null) toolbar.getButton(0).setMenu(addMenu);
         if (toolbar.getButton(1) != null) toolbar.getButton(1).setMenu(delMenu);
-        if (toolbar.getButton(2) != null) toolbar.getButton(2).setMenu(sortMenu);
-        if (toolbar.getButton(3) != null) toolbar.getButton(3).setMenu(findMenu);
-        if (toolbar.getButton(4) != null) toolbar.getButton(4).setMenu(modeMenu);
+        if (toolbar.getButton(2) != null && playlistMenu != null) toolbar.getButton(2).setMenu(playlistMenu);
+        // Skin toolbar images use: Add, Delete, List, Sort, Find, Edit, Mode.
+        // The last segment is the visible “模式” button and must open only
+        // the five playback modes, rather than the complete main menu.
+        if (toolbar.getButton(3) != null) toolbar.getButton(3).setMenu(sortMenu);
+        if (toolbar.getButton(4) != null) toolbar.getButton(4).setMenu(findMenu);
         if (toolbar.getButton(5) != null) toolbar.getButton(5).setMenu(optMenu);
-        if (toolbar.getButton(6) != null) toolbar.getButton(6).setMenu(mainMenu);
+        if (toolbar.getButton(6) != null) toolbar.getButton(6).setMenu(modeMenu);
         return toolbar;
     }
 
@@ -515,6 +518,7 @@ public class PlaylistWindow extends SkinWindow implements TtMenuCatalog.Actions 
     // ===== 左侧播放列表菜单 =====
     private void createPlaylistMenu() {
         playlistMenu = TtMenuCatalog.create(TtMenuCatalog.Kind.LIST, this);
+        if (toolbar != null && toolbar.getButton(2) != null) toolbar.getButton(2).setMenu(playlistMenu);
     }
 
     private void doSwitchList() {

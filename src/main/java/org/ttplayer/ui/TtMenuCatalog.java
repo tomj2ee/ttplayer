@@ -101,8 +101,6 @@ public final class TtMenuCatalog {
                 break;
             case MODE:
                 for (int index = 0; index < 5; index++) toggle(popup, "menu.playMode." + index, "mode:" + index, actions);
-                popup.addSeparator();
-                toggle(popup, "menu.pauseAfterPlay", "pause_after", actions);
                 break;
             case PLAYLIST_CONTEXT:
                 item(popup, "menu.properties", "properties", actions);
