@@ -190,10 +190,10 @@ public class WindowLifecycle {
         rebuildLyrics = null;
         if (currentSong == null) return;
         if (hub.playerEngine != null && hub.playerEngine.isPaused()) {
-            hub.player.setSongInfo(currentSong.toString());
+            hub.player.setSongInfo(currentSong);
             hub.player.setStatusInfo(org.ttplayer.util.Messages.get("status.paused"));
         } else if (hub.playerEngine != null && hub.playerEngine.isPlaying()) {
-            hub.player.setSongInfo(currentSong.toString());
+            hub.player.setSongInfo(currentSong);
             hub.player.setStatusInfo(org.ttplayer.util.Messages.get("status.playing"));
         }
         hub.miniWindow.refreshPlaybackState();

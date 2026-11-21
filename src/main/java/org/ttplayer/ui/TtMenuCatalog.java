@@ -60,6 +60,7 @@ public final class TtMenuCatalog {
                 item(popup, "menu.deleteNotSelected", "delete_other", actions);
                 popup.addSeparator();
                 item(popup, "menu.deleteDuplicates", "delete_duplicates", actions);
+                item(popup, "menu.deleteInvalid", "delete_invalid", actions);
                 item(popup, "menu.clearList", "clear_list", actions);
                 break;
             case LIST:

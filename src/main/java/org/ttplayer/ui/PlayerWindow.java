@@ -7,6 +7,7 @@ import org.ttplayer.controls.TtLed;
 import org.ttplayer.controls.TtTrackBar;
 import org.ttplayer.controls.TtVolumeBar;
 import org.ttplayer.engine.PlayerEngine;
+import org.ttplayer.model.Song;
 import org.ttplayer.skin.TtSkin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,8 +17,12 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import org.ttplayer.util.Messages;
 import org.ttplayer.util.MenuSettings;
+import org.ttplayer.util.SongUtils;
 
 public class PlayerWindow extends SkinWindow {
     private static final Logger log = LoggerFactory.getLogger(PlayerWindow.class);
@@ -33,7 +38,7 @@ public class PlayerWindow extends SkinWindow {
     private TtVisualizer visualizer;
     public TtVisualizer getVisualizer() { return visualizer; }
     private TtLed ledLabel;
-    private JLabel infoLabel;
+    private SongInfoLabel infoLabel;
     private JLabel statusLabel;
     private JLabel iconLabel;
 
@@ -201,8 +206,8 @@ public class PlayerWindow extends SkinWindow {
                     break;
                 case "icon":        createIcon(c); break;
                 case "info":
-                    infoLabel = createInfo(c);
-                    infoLabel.setText(org.ttplayer.util.Messages.get("app.name"));
+                    infoLabel = createInfo(c, new SongInfoLabel());
+                    infoLabel.setText(Messages.get("app.name"));
                     break;
                 case "status":
                     statusLabel = createInfo(c);
@@ -288,7 +293,6 @@ public class PlayerWindow extends SkinWindow {
                 miniWindow = new MiniWindow(skin, playerEngine);
                 miniWindow.setOnExitMiniMode(this::exitMiniMode);
                 miniWindow.setOnToggleLyric(this::toggleLyric);
-                updateMiniModeDisplay();
             }
 
             // 同步播放状态
@@ -313,12 +317,6 @@ public class PlayerWindow extends SkinWindow {
         this.setVisible(true);
         if (miniWindow != null) {
             miniWindow.setVisible(false);
-        }
-    }
-
-    public void updateMiniModeDisplay() {
-        if (miniWindow != null && infoLabel != null) {
-            miniWindow.setDisplayText(infoLabel.getText());
         }
     }
 
@@ -569,9 +567,28 @@ public class PlayerWindow extends SkinWindow {
         }
     }
 
-    public void setSongInfo(String title){
-        if (infoLabel != null) infoLabel.setText(title != null ? title : "");
-        updateMiniModeDisplay();
+    public void setSongInfo(Song song) {
+        if (infoLabel != null) {
+            List<String> pages = new ArrayList<>();
+            if (song != null) {
+                String filename = song.getFileName();
+                String title = song.title == null || song.title.trim().isEmpty() ? filename : song.title.trim();
+                if (title.isEmpty()) title = Messages.get("song.unknownTitle");
+                String artist = song.artist == null ? "" : song.artist.trim();
+                pages.add(artist.isEmpty() ? title : artist + " \u2014 " + title);
+                int seconds = playerEngine == null ? 0 : playerEngine.getDuration();
+                String duration = seconds > 0 ? String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60) : song.duration;
+                addSongInfo(pages, "song.durationPrefix", duration);
+                addSongInfo(pages, "song.albumPrefix", song.album);
+                addSongInfo(pages, "song.formatPrefix", SongUtils.getFileExtension(filename).toUpperCase(Locale.ROOT));
+            }
+            infoLabel.setPages(pages, Messages.get("app.name"));
+        }
+        if (miniWindow != null) miniWindow.setDisplayText(song == null ? "" : null);
+    }
+
+    private static void addSongInfo(List<String> pages, String key, String value) {
+        if (value != null && !value.trim().isEmpty()) pages.add(Messages.get(key) + value.trim());
     }
 
     public void setOnToggleMiniMode(Runnable listener) {

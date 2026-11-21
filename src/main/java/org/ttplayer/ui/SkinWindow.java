@@ -25,6 +25,7 @@ public class SkinWindow extends JFrame {
     public final TtSkin.WindowDef def;
     protected final Color transparentColor;
     private BufferedImage bgImage;
+    private BufferedImage[] corners;
 
     protected final boolean isMain;
 
@@ -51,6 +52,10 @@ public class SkinWindow extends JFrame {
     // ================================================================
 
     public SkinWindow(TtSkin skin, TtSkin.WindowDef def, boolean isMain) {
+        this(skin, def, isMain, new Color(0, true));
+    }
+
+    protected SkinWindow(TtSkin skin, TtSkin.WindowDef def, boolean isMain, Color windowBackground) {
         super(def != null ? def.name : "Window");
         this.skin = skin;
         this.def = def;
@@ -66,6 +71,7 @@ public class SkinWindow extends JFrame {
 
         loadBg();
         setupResizeRect();
+        prepareCorners();
         if (bgW > 0 && bgH > 0) {
             setSize(bgW, bgH);
         } else if (def.width > 0 && def.height > 0) {
@@ -73,8 +79,8 @@ public class SkinWindow extends JFrame {
         } else {
             setSize(268, 165);
         }
-        setContentPane(new BgPanel());
-        setBackground(new Color(0, 0, 0, 0));
+        setContentPane(new BgPanel(windowBackground));
+        setBackground(corners == null ? windowBackground : new Color(0, true));
         buildControls();
         if (hasResizeRect()) {
             enableEdgeResizing();
@@ -206,22 +212,51 @@ public class SkinWindow extends JFrame {
         if (bgImage != null) {
             bgW = bgImage.getWidth();
             bgH = bgImage.getHeight();
-            Color bgFillColor = null;
-            for (int y = 0; y < Math.min(bgH, 5) && bgFillColor == null; y++) {
-                for (int x = 0; x < Math.min(bgW, 5); x++) {
-                    int a = (bgImage.getRGB(x, y) >> 24) & 0xFF;
-                    if (a > 240) {
-                        bgFillColor = new Color(bgImage.getRGB(x, y));
-                        break;
-                    }
+        }
+    }
+
+    private void prepareCorners() {
+        if (bgImage == null) return;
+        boolean sliced = hasResizeRect();
+        for (int i = 0; i < 4; i++) {
+            boolean right = (i & 1) != 0;
+            boolean bottom = (i & 2) != 0;
+            if ((bgImage.getRGB(right ? bgW - 1 : 0, bottom ? bgH - 1 : 0) >>> 24) == 255) continue;
+            int width = Math.min(8, sliced ? ninePatch[right ? 2 : 0] : bgW / 2);
+            int height = Math.min(8, sliced ? ninePatch[bottom ? 3 : 1] : bgH / 2);
+            if (width <= 0 || height <= 0) continue;
+            BufferedImage source = bgImage.getSubimage(right ? bgW - width : 0, bottom ? bgH - height : 0,
+                    width, height);
+            BufferedImage smooth = new BufferedImage(width * 2, height * 2, BufferedImage.TYPE_INT_ARGB_PRE);
+            Graphics2D g = smooth.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.drawImage(source, 0, 0, smooth.getWidth(), smooth.getHeight(), null);
+            g.dispose();
+            // Filter the transparent outline without softening the solid border artwork.
+            for (int y = 0; y < smooth.getHeight(); y++) {
+                for (int x = 0; x < smooth.getWidth(); x++) {
+                    int alpha = smooth.getRGB(x, y) >>> 24;
+                    if (alpha == 255) smooth.setRGB(x, y, source.getRGB(x / 2, y / 2));
                 }
             }
-
+            if (corners == null) corners = new BufferedImage[4];
+            corners[i] = smooth;
         }
     }
 
     private boolean hasResizeRect() {
         return def.resizeRect != null && !def.resizeRect.isEmpty();
+    }
+
+    protected final boolean hasTranslucentCorners() { return corners != null; }
+
+    final boolean paintSkinBehind(Graphics2D graphics, JComponent child) {
+        if (!(child.getParent() instanceof BgPanel)) return false;
+        Graphics2D g = (Graphics2D) graphics.create();
+        g.translate(-child.getX(), -child.getY());
+        ((BgPanel) child.getParent()).paintSkin(g);
+        g.dispose();
+        return true;
     }
 
     private void setupResizeRect() {
@@ -248,22 +283,52 @@ public class SkinWindow extends JFrame {
     // ================================================================
 
     private class BgPanel extends JPanel {
-        BgPanel() {
-            setOpaque(false);
+        private final Color fill;
+
+        BgPanel(Color background) {
+            fill = background;
+            setOpaque(background.getAlpha() == 255 && corners == null);
             setLayout(null);
         }
 
         @Override
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = (Graphics2D) g.create();
+            paintSkin(g2);
+            paintCorners(g2);
+            g2.dispose();
+        }
+
+        private void paintSkin(Graphics2D g2) {
             if (bgImage != null) {
+                if (fill.getAlpha() > 0) {
+                    g2.setColor(fill);
+                    g2.fillRect(0, 0, getWidth(), getHeight());
+                }
                 drawNinePatch(g2, bgImage, getWidth(), getHeight(),
                         ninePatch[0], ninePatch[1], ninePatch[2], ninePatch[3]);
             } else {
                 g2.setColor(new Color(60, 63, 65));
                 g2.fillRect(0, 0, getWidth(), getHeight());
             }
-            g2.dispose();
+        }
+
+        private void paintCorners(Graphics2D g) {
+            if (corners == null) return;
+            // Replace the original corner pixels, including the opaque backing of the lyric window.
+            g.setComposite(AlphaComposite.Src);
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            for (int i = 0; i < corners.length; i++) {
+                BufferedImage corner = corners[i];
+                if (corner == null) continue;
+                int width = corner.getWidth() / 2, height = corner.getHeight() / 2;
+                if (!hasResizeRect()) {
+                    width = Math.round((float) width * getWidth() / bgW);
+                    height = Math.round((float) height * getHeight() / bgH);
+                }
+                g.drawImage(corner, (i & 1) == 0 ? 0 : getWidth() - width,
+                        (i & 2) == 0 ? 0 : getHeight() - height, width, height, null);
+            }
         }
     }
 
@@ -465,7 +530,10 @@ public class SkinWindow extends JFrame {
     protected Color getSkinTransparentColor() { return transparentColor; }
 
     protected JLabel createInfo(TtSkin.Ctl ctl) {
-        JLabel lb = new JLabel();
+        return createInfo(ctl, new JLabel());
+    }
+
+    protected <T extends JLabel> T createInfo(TtSkin.Ctl ctl, T lb) {
         lb.setBounds(ctl.left, ctl.top, ctl.right - ctl.left, ctl.bottom - ctl.top);
         if (ctl.color != null && !ctl.color.isEmpty()) {
             Color color = ColorUtils.decode(ctl.color);

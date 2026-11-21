@@ -333,12 +333,14 @@ public final class VideoWindow extends JFrame {
 
     @Override public void setVisible(boolean visible) {
         super.setVisible(visible);
+        MacFullscreenPresentation.update(this, fullscreenMode && visible);
         if (refreshTimer != null) {
             if (visible) refreshTimer.start(); else refreshTimer.stop();
         }
     }
 
     @Override public void dispose() {
+        MacFullscreenPresentation.update(this, false);
         if (refreshTimer != null) refreshTimer.stop();
         super.dispose();
     }

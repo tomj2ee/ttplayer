@@ -10,6 +10,7 @@ import org.ttplayer.model.PlaylistManager;
 import org.ttplayer.model.Song;
 import org.ttplayer.skin.TtSkin;
 import org.ttplayer.util.FontUtils;
+import org.ttplayer.util.MediaFileValidator;
 import org.ttplayer.util.Messages;
 import org.ttplayer.util.MenuSettings;
 import org.w3c.dom.Document;
@@ -22,8 +23,11 @@ import java.awt.event.MouseEvent;
 import java.io.*;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
 
 /**
  * 播放列表窗口 — playlist_window
@@ -374,6 +378,7 @@ public class PlaylistWindow extends SkinWindow implements TtMenuCatalog.Actions 
     }
 
     private TtMenuCatalog.Actions menuActions;
+    private boolean scanningInvalidSongs;
 
     public void setMenuActions(TtMenuCatalog.Actions actions) { menuActions = actions; }
 
@@ -396,6 +401,8 @@ public class PlaylistWindow extends SkinWindow implements TtMenuCatalog.Actions 
     @Override
     public boolean enabled(String action) {
         boolean hasList = playlistManager != null && playlistManager.getCurrentPlaylist() != null;
+        if ("delete_invalid".equals(action))
+            return hasList && !playlistManager.getCurrentPlaylist().songs.isEmpty() && !scanningInvalidSongs;
         if (java.util.Arrays.asList("delete", "delete_other", "batch_info", "properties", "open_file_location", "replaygain_scan", "replaygain_update").contains(action))
             return hasList && listRight != null && listRight.getSelectedIndices().length > 0;
         return menuActions == null || menuActions.enabled(action);
@@ -808,6 +815,64 @@ public class PlaylistWindow extends SkinWindow implements TtMenuCatalog.Actions 
         if (dupCount > 0) { pl.songs.clear(); pl.songs.addAll(unique); refreshRightList(); JOptionPane.showMessageDialog(this, org.ttplayer.util.Messages.get("dialog.deletedDuplicatesPrefix") + dupCount + org.ttplayer.util.Messages.get("dialog.deletedDuplicatesSuffix"), org.ttplayer.util.Messages.get("menu.deleteDuplicates"), JOptionPane.INFORMATION_MESSAGE); }
         else { JOptionPane.showMessageDialog(this, org.ttplayer.util.Messages.get("dialog.noDuplicates"), org.ttplayer.util.Messages.get("menu.deleteDuplicates"), JOptionPane.INFORMATION_MESSAGE); }
     }
+
+    private void doDeleteInvalid() {
+        if (!enabled("delete_invalid")) return;
+        Playlist playlist = playlistManager.getCurrentPlaylist();
+        List<Song> snapshot = new ArrayList<>(playlist.songs);
+        String title = Messages.get("menu.deleteInvalid");
+        ProgressMonitor progress = new ProgressMonitor(this, Messages.get("dialog.checkingSongs"), null, 0, 100);
+        Timer progressTimer = new Timer(150, null);
+        scanningInvalidSongs = true;
+        SwingWorker<Set<Song>, Void> scan = new SwingWorker<Set<Song>, Void>() {
+            @Override
+            protected Set<Song> doInBackground() throws IOException {
+                Set<Song> invalid = new HashSet<>();
+                for (int index = 0; index < snapshot.size() && !isCancelled(); index++) {
+                    setProgress((int) (100L * index / snapshot.size()));
+                    Song song = snapshot.get(index);
+                    if (MediaFileValidator.isInvalidLocalSource(song.filePath)) invalid.add(song);
+                }
+                return invalid;
+            }
+
+            @Override
+            protected void done() {
+                progressTimer.stop();
+                boolean canceled = isCancelled() || progress.isCanceled();
+                progress.close();
+                try {
+                    if (canceled || !isDisplayable() || playlistManager.getCurrentPlaylist() != playlist) return;
+                    Set<Song> invalid = get();
+                    long count = playlist.songs.stream().filter(invalid::contains).count();
+                    if (count == 0) {
+                        JOptionPane.showMessageDialog(PlaylistWindow.this, Messages.get("dialog.noInvalidSongs"),
+                                title, JOptionPane.INFORMATION_MESSAGE);
+                    } else if (JOptionPane.showConfirmDialog(PlaylistWindow.this,
+                            Messages.get("dialog.deleteInvalidConfirm", count), title, JOptionPane.YES_NO_OPTION)
+                            == JOptionPane.YES_OPTION && playlistManager.getCurrentPlaylist() == playlist
+                            && playlist.songs.removeIf(invalid::contains)) {
+                        refreshRightList();
+                        savePlaylistConfig();
+                    }
+                } catch (ExecutionException error) {
+                    JOptionPane.showMessageDialog(PlaylistWindow.this, Messages.get("dialog.checkSongsFailed"),
+                            title, JOptionPane.ERROR_MESSAGE);
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    scanningInvalidSongs = false;
+                }
+            }
+        };
+        progressTimer.addActionListener(event -> {
+            if (progress.isCanceled() || !isDisplayable()) scan.cancel(true);
+            else progress.setProgress(scan.getProgress());
+        });
+        scan.execute();
+        progressTimer.start();
+    }
+
     private void doClearList() {
         if (JOptionPane.showConfirmDialog(this, org.ttplayer.util.Messages.get("dialog.clearListConfirm"), org.ttplayer.util.Messages.get("dialog.clearListTitle"), JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
             playlistManager.getCurrentPlaylist().clear(); refreshRightList(); savePlaylistConfig();
@@ -891,6 +956,7 @@ public class PlaylistWindow extends SkinWindow implements TtMenuCatalog.Actions 
             case "delete": doDeleteSelected(); break;
             case "delete_other": doDeleteNotSelected(); break;
             case "delete_duplicates": doDeleteDuplicates(); break;
+            case "delete_invalid": doDeleteInvalid(); return true;
             case "clear_list": doClearList(); break;
             case "sort_title": doSortByField("title"); break;
             case "sort_artist": doSortByField("artist"); break;

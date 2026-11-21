@@ -106,6 +106,7 @@ public final class PlayerFullscreenWindow extends JDialog {
 
     @Override public void setVisible(boolean visible) {
         super.setVisible(visible);
+        MacFullscreenPresentation.update(this, visible);
         if (visible) { toFront(); requestFocus(); }
     }
 
@@ -125,6 +126,7 @@ public final class PlayerFullscreenWindow extends JDialog {
     }
     @Override
     public void dispose() {
+        MacFullscreenPresentation.update(this, false);
         if (timer != null) timer.stop();
         super.dispose();
     }

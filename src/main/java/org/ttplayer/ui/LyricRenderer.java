@@ -267,9 +267,9 @@ public class LyricRenderer extends JPanel {
     }
 
     @Override protected void paintComponent(Graphics graphics) {
-        super.paintComponent(graphics);
         if (getWidth() <= 0 || getHeight() <= 0) return;
         Graphics2D canvas = (Graphics2D) graphics.create();
+        if (!isOpaque() || !lyricWindow.paintSkinBehind(canvas, this)) super.paintComponent(graphics);
         canvas.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         canvas.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         updateGeometry();

@@ -36,9 +36,8 @@ public class PlayerEventListener {
             @Override
             public void onPlaybackStarted(Song song) {
                 if (song != hub.getPlayerEngine().getCurrentSong()) return;
-                String info = (song.artist != null ? song.artist + " - " : "") +
-                              (song.title != null ? song.title : "");
-                hub.getPlayer().setSongInfo(info);
+                String info = song.toString();
+                hub.getPlayer().setSongInfo(song);
                 hub.getPlayer().setStatusInfo(org.ttplayer.util.Messages.get("status.playing"));
 
                 // 播放列表自动选中当前播放的歌曲
@@ -50,7 +49,6 @@ public class PlayerEventListener {
                 else hub.getVideoWindow().hidePlayback();
                 hub.getLyric().loadLyrics(hub.getPlayerEngine().isVideoPlayback() ? null : song);
                 if (hub.getMiniWindow() != null) {
-                    hub.getMiniWindow().setDisplayText(null);
                     hub.getMiniWindow().refreshPlaybackState();
                 }
 
@@ -63,7 +61,7 @@ public class PlayerEventListener {
                     hub.getVideoWindow().hidePlayback();
                 }
                 playbackSaveTimer.stop();
-                hub.getPlayer().setSongInfo("");
+                hub.getPlayer().setSongInfo(null);
                 hub.getPlayer().setStatusInfo(org.ttplayer.util.Messages.get("status.stopped"));
                 hub.tray.updateToolTip(org.ttplayer.util.Messages.get("status.stopped"));
 
