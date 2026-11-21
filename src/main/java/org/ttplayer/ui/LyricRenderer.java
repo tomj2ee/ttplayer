@@ -116,7 +116,9 @@ public class LyricRenderer extends JPanel {
             PlayerEngine engine = lyricWindow.playerEngine;
             if (engine != null) setCurrentTime(engine.getPositionMs());
             lyricWindow.advanceCoverAnimation();
-            repaint();
+            // Let the resize compositor settle; the final resize event below
+            // triggers a repaint when edge dragging ends.
+            if (!lyricWindow.isEdgeResizing()) repaint();
         });
         addHierarchyListener(event -> {
             if ((event.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0) {

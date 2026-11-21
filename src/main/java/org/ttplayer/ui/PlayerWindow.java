@@ -364,6 +364,11 @@ public class PlayerWindow extends SkinWindow {
     private void createIcon(TtSkin.Ctl ctl) {
         iconLabel = new JLabel();
         iconLabel.setBounds(ctl.left, ctl.top, ctl.right - ctl.left, ctl.bottom - ctl.top);
+        // The native skin renderer places the fallback ICO at the control's
+        // origin and keeps its decoded 16x16 size; do not center it in a
+        // larger control rectangle.
+        iconLabel.setHorizontalAlignment(SwingConstants.LEFT);
+        iconLabel.setVerticalAlignment(SwingConstants.TOP);
 
         if (ctl.image != null && !ctl.image.isEmpty()) {
 
